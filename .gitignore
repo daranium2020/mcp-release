@@ -1,0 +1,24 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Environment / secrets
+.env
+.env.*
+.npmrc
+
+# Logs
+*.log
+npm-debug.log*
+
+# Build caches
+coverage/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Claude Code tool config (user-specific)
+.claude/

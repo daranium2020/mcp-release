@@ -1,0 +1,6 @@
+{
+  "name": "@mcp-launch/github-action",
+  "version": "0.0.1",
+  "private": true,
+  "description": "GitHub Action for MCP server release validation (Milestone 2)"
+}
