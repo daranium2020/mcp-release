@@ -11,8 +11,17 @@ export {
   FindingSeverity as FindingSeverityEnum,
   CheckReport as CheckReportSchema,
 } from "./report.js";
-export { SsrfError, isBlockedIp, validateUrl, type SsrfOptions } from "./ssrf.js";
-export { TransportError } from "./transport.js";
+export {
+  SsrfError,
+  isBlockedIp,
+  validateUrl,
+  resolveUrlForPinning,
+  validateRedirect,
+  type SsrfOptions,
+  type ResolvedUrl,
+} from "./ssrf.js";
+export { type DnsRecord, type DnsResolver, systemDnsResolver } from "./dns.js";
+export { TransportError, type ConnectOptions, type ConnectResult } from "./transport.js";
 export { redactUrl, redactHeaders, redactString, redactErrorMessage } from "./redact.js";
 export { validateJsonSchema } from "./schema-validator.js";
 export { validateTool, validateTools } from "./validator.js";

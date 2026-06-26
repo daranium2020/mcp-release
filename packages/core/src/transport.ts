@@ -1,30 +1,45 @@
 /**
  * Transport adapter for MCP Streamable HTTP.
  *
- * SECURITY LIMITATION (DNS pinning): The MCP SDK's StreamableHTTPClientTransport
- * does not allow injecting a pre-resolved IP address while preserving the original
- * hostname for TLS/SNI. This adapter performs preflight DNS validation and blocks
- * known-bad destinations before connecting. However, a TOCTOU window exists between
- * our DNS check and the SDK's own DNS resolution. Full DNS pinning (connecting to
- * the pre-resolved IP with SNI set to the original hostname) is tracked as a
- * next-milestone security task.
+ * DNS PINNING (M2):
+ * A custom undici Agent is used for HTTPS connections. The Agent's connector
+ * function routes every outgoing TCP/TLS socket to the IP address that was
+ * resolved and validated before the MCP Client.connect() call. This closes
+ * the TOCTOU window that existed between our preflight DNS check and the
+ * SDK's own resolution in M1.
  *
- * Mitigations in place:
- * - All A/AAAA records are checked before connection.
- * - Every redirect destination is re-validated.
- * - Short connection timeouts limit the exploitation window.
+ * - For the initial hostname: the pre-validated IP is pinned; no further DNS
+ *   resolution occurs for that origin.
+ * - For cross-origin redirect targets: DNS is resolved and SSRF-checked inside
+ *   the connector, so every TCP connection uses a freshly validated address.
+ * - TLS certificate verification is always enforced (rejectUnauthorized: true).
+ * - The original hostname is passed as SNI for correct certificate validation.
+ *
+ * For HTTP localhost in development mode, no pinning is applied (the address
+ * is a trusted loopback literal, not an externally-controlled name).
+ *
+ * REMAINING LIMITATION:
+ * Redirect targets have a narrow TOCTOU between the pre-connect
+ * validateRedirect() call and the in-connector DNS resolution. Both checks use
+ * the injected DnsResolver so test coverage is complete; the practical window
+ * is milliseconds. Full pre-resolution for every redirect target is tracked as
+ * a future improvement.
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Implementation, Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import tls from "node:tls";
+import net from "node:net";
+import { fetch as undiciFetch, Agent } from "undici";
+import type { buildConnector } from "undici";
 import { redactErrorMessage, redactUrl } from "./redact.js";
 import {
   MAX_REDIRECTS_DEFAULT,
   SsrfError,
   validateRedirect,
-  validateUrl,
+  resolveUrlForPinning,
   type SsrfOptions,
 } from "./ssrf.js";
 
@@ -40,13 +55,16 @@ export type ConnectResult = {
   protocolVersion: string;
   serverInfo: { name?: string; version?: string } | null;
   durationMs: number;
-  /** null when the SDK does not expose raw HTTP status */
+  /** null — the SDK does not expose the raw HTTP status */
   httpStatus: number | null;
   redirectCount: number;
+  /** Release the underlying undici Agent and all pooled connections. */
+  disposeConnection: () => Promise<void>;
 };
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_RESPONSE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+const MAX_HEADER_COUNT = 200;
 
 export class TransportError extends Error {
   constructor(
@@ -58,6 +76,88 @@ export class TransportError extends Error {
   }
 }
 
+/**
+ * Build an undici connector that:
+ *  - For `pinnedHostname`: always routes to `pinnedIp` (pre-validated, no TOCTOU).
+ *  - For any other hostname (cross-origin redirect target): resolves DNS inline
+ *    through our SSRF-checking resolver and connects to the first valid IP.
+ */
+function createPinnedConnector(
+  pinnedHostname: string,
+  pinnedIp: string,
+  ssrfOpts: SsrfOptions,
+): buildConnector.connector {
+  const doConnect = (
+    host: string,
+    port: number,
+    servername: string,
+    isHttps: boolean,
+    callback: buildConnector.Callback,
+  ): void => {
+    if (isHttps) {
+      const socket = tls.connect({
+        host,
+        port,
+        servername,
+        rejectUnauthorized: true, // NEVER disable TLS verification
+      });
+      socket.once("secureConnect", () => callback(null, socket));
+      socket.once("error", (err) => callback(err, null));
+    } else {
+      const socket = net.createConnection({ host, port });
+      socket.once("connect", () => callback(null, socket));
+      socket.once("error", (err) => callback(err, null));
+    }
+  };
+
+  return (opts: buildConnector.Options, callback: buildConnector.Callback) => {
+    const port = parseInt(opts.port, 10);
+    const isHttps = opts.protocol === "https:";
+    const sni = opts.servername ?? opts.hostname;
+
+    if (opts.hostname === pinnedHostname) {
+      // Initial hostname — use pre-validated pinned IP, no additional DNS call
+      doConnect(pinnedIp, port, sni, isHttps, callback);
+      return;
+    }
+
+    // Cross-origin redirect target — resolve and validate inline
+    const probeUrl = `${opts.protocol}//${opts.hostname}:${opts.port}`;
+    resolveUrlForPinning(probeUrl, ssrfOpts)
+      .then((result) => {
+        const ip = result.resolvedIps[0];
+        if (!ip) {
+          callback(
+            new Error(`No valid IP resolved for ${opts.hostname}`),
+            null,
+          );
+          return;
+        }
+        doConnect(ip, port, sni, isHttps, callback);
+      })
+      .catch((err: unknown) => {
+        callback(err instanceof Error ? err : new Error(String(err)), null);
+      });
+  };
+}
+
+/**
+ * Wrap an undici Agent in a fetch-compatible function.
+ *
+ * undici.RequestInit includes `dispatcher?: Dispatcher`, which is not in the
+ * global RequestInit. The casts are safe: in Node.js 20+ undici.Response is
+ * identical to globalThis.Response (same underlying implementation).
+ */
+function makeFetchWithAgent(agent: Agent): typeof globalThis.fetch {
+  return (input, init) => {
+    // undici.RequestInit adds `dispatcher`; undici.Response === globalThis.Response in Node 20+.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const undiciInit = { ...(init as any), dispatcher: agent };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return undiciFetch(input as any, undiciInit) as unknown as Promise<Response>;
+  };
+}
+
 export async function connectToMcpServer(
   serverUrl: string,
   opts: ConnectOptions = {},
@@ -66,36 +166,68 @@ export async function connectToMcpServer(
   const maxRedirects = opts.maxRedirects ?? MAX_REDIRECTS_DEFAULT;
   const ssrfOpts = opts.ssrf ?? {};
 
-  // Preflight SSRF check
+  // Resolve DNS and validate URL — returns pinned IPs for HTTPS
+  let resolvedUrl: Awaited<ReturnType<typeof resolveUrlForPinning>>;
   try {
-    await validateUrl(serverUrl, ssrfOpts);
+    resolvedUrl = await resolveUrlForPinning(serverUrl, ssrfOpts);
   } catch (err) {
     if (err instanceof SsrfError) {
-      throw new TransportError(
-        `SSRF validation failed: ${err.message}`,
-        err,
-      );
+      throw new TransportError(`SSRF validation failed: ${err.message}`, err);
     }
     throw err;
   }
 
+  // Create pinned agent for HTTPS (closes TOCTOU), or null for HTTP localhost
+  let agent: Agent | null = null;
+  let baseFetch: typeof globalThis.fetch;
+
+  if (resolvedUrl.isHttps && resolvedUrl.resolvedIps.length > 0) {
+    const pinnedIp = resolvedUrl.resolvedIps[0]!;
+    const connector = createPinnedConnector(
+      resolvedUrl.hostname,
+      pinnedIp,
+      ssrfOpts,
+    );
+    agent = new Agent({ connect: connector });
+    baseFetch = makeFetchWithAgent(agent);
+  } else {
+    // HTTP localhost in dev mode — use global fetch (socket goes to 127.0.0.1)
+    baseFetch = fetch;
+  }
+
   let redirectCount = 0;
 
-  const fetchWithGuard: typeof fetch = async (input, init) => {
-    const url =
+  // Security-hardened fetch: timeout, redirect loop/downgrade detection,
+  // response-size limit, header-count limit.
+  //
+  // visitedUrls is created fresh for each top-level SDK request so that the
+  // same URL can be called multiple times (e.g., initialize then tools/list).
+  // Redirect chains within a single request share the same Set to detect loops.
+  const fetchChain = async (
+    input: Parameters<typeof fetch>[0],
+    init: Parameters<typeof fetch>[1],
+    chainVisited: Set<string>,
+  ): Promise<Response> => {
+    const urlStr =
       typeof input === "string"
         ? input
         : input instanceof URL
           ? input.href
           : (input as Request).url;
 
+    // Redirect loop detection (within a single redirect chain)
+    if (chainVisited.has(urlStr)) {
+      throw new TransportError(
+        `Redirect loop detected: already visited ${redactUrl(urlStr)}`,
+      );
+    }
+    chainVisited.add(urlStr);
+
     const timeoutController = new AbortController();
     const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
 
-    // Merge our timeout signal with any signal the transport passes (e.g. its
-    // own abort controller for session teardown). AbortSignal.any() fires as
-    // soon as any constituent signal fires — available in Node.js 20+.
-    const existingSignal = init?.signal instanceof AbortSignal ? init.signal : undefined;
+    const existingSignal =
+      init?.signal instanceof AbortSignal ? init.signal : undefined;
     const mergedSignal = existingSignal
       ? AbortSignal.any([timeoutController.signal, existingSignal])
       : timeoutController.signal;
@@ -108,9 +240,20 @@ export async function connectToMcpServer(
 
     let response: Response;
     try {
-      response = await fetch(url, fetchInit);
+      response = await baseFetch(urlStr, fetchInit);
     } finally {
       clearTimeout(timer);
+    }
+
+    // Enforce maximum header count
+    let headerCount = 0;
+    response.headers.forEach(() => {
+      headerCount++;
+    });
+    if (headerCount > MAX_HEADER_COUNT) {
+      throw new TransportError(
+        `Response has too many headers (${headerCount} > ${MAX_HEADER_COUNT})`,
+      );
     }
 
     if (
@@ -123,12 +266,19 @@ export async function connectToMcpServer(
       }
       redirectCount++;
       const location = response.headers.get("location")!;
-      const resolved = new URL(location, url).toString();
+      const resolved = new URL(location, urlStr).toString();
+      const originalProtocol = new URL(urlStr).protocol;
 
       try {
-        await validateRedirect(resolved, ssrfOpts);
+        await validateRedirect(resolved, ssrfOpts, originalProtocol);
       } catch (err) {
         if (err instanceof SsrfError) {
+          if (err.reason === "PROTOCOL_DOWNGRADE") {
+            throw new TransportError(
+              `Protocol downgrade blocked: ${redactUrl(resolved)}`,
+              err,
+            );
+          }
           throw new TransportError(
             `Redirect destination blocked: ${redactUrl(resolved)} — ${err.message}`,
             err,
@@ -137,32 +287,42 @@ export async function connectToMcpServer(
         throw err;
       }
 
-      // Drop auth headers when crossing origins
-      const originalOrigin = new URL(url).origin;
-      const redirectOrigin = new URL(resolved).origin;
-      let redirectInit: RequestInit = { ...init, redirect: "manual", signal: mergedSignal };
-      if (originalOrigin !== redirectOrigin) {
-        const existingHeaders = redirectInit.headers;
+      // Drop sensitive headers when crossing origins
+      const origOrigin = new URL(urlStr).origin;
+      const destOrigin = new URL(resolved).origin;
+      let redirectInit: RequestInit = {
+        ...init,
+        redirect: "manual",
+        signal: mergedSignal,
+      };
+      if (origOrigin !== destOrigin) {
+        const existingHdrs = redirectInit.headers;
         const safeHeaders: Record<string, string> = {};
-        if (existingHeaders && typeof existingHeaders === "object" && !Array.isArray(existingHeaders)) {
+        if (existingHdrs && typeof existingHdrs === "object" && !Array.isArray(existingHdrs)) {
           const entries =
-            existingHeaders instanceof Headers
-              ? [...existingHeaders.entries()]
-              : Object.entries(existingHeaders as Record<string, string>);
+            existingHdrs instanceof Headers
+              ? [...existingHdrs.entries()]
+              : Object.entries(existingHdrs as Record<string, string>);
           for (const [k, v] of entries) {
             const lower = k.toLowerCase();
-            if (lower !== "authorization" && lower !== "x-api-key") {
-              safeHeaders[k] = v;
-            }
+            const isSensitive =
+              lower === "authorization" ||
+              lower === "x-api-key" ||
+              lower === "cookie" ||
+              lower === "proxy-authorization" ||
+              lower === "x-auth-token" ||
+              lower === "x-secret" ||
+              lower === "x-token";
+            if (!isSensitive) safeHeaders[k] = v;
           }
         }
         redirectInit = { ...redirectInit, headers: safeHeaders };
       }
 
-      return fetchWithGuard(resolved, redirectInit);
+      return fetchChain(resolved, redirectInit, chainVisited);
     }
 
-    // Enforce response size limit
+    // Enforce response-size limit via Content-Length header
     const contentLength = response.headers.get("content-length");
     if (
       contentLength !== null &&
@@ -176,21 +336,25 @@ export async function connectToMcpServer(
     return response;
   };
 
-  const startMs = Date.now();
+  // Each top-level SDK request starts a fresh per-chain visited set.
+  const fetchWithGuard: typeof fetch = (input, init) =>
+    fetchChain(input, init, new Set());
 
+  const startMs = Date.now();
   const url = new URL(serverUrl);
+
   const transport = new StreamableHTTPClientTransport(url, {
     fetch: fetchWithGuard,
   });
 
-  const client = new Client({
+  const mcpClient = new Client({
     name: "mcp-launch-checker",
     version: "0.0.1",
   });
 
-  const connectPromise = client.connect(
-    // SDK type has sessionId: string | undefined, but Transport interface expects string.
-    // This is an SDK internal type inconsistency; the cast is safe at runtime.
+  const connectPromise = mcpClient.connect(
+    // SDK type has sessionId: string | undefined; Transport interface expects string.
+    // This cast resolves the internal type inconsistency; the runtime behaviour is correct.
     transport as unknown as Transport,
   );
   const timeoutPromise = new Promise<never>((_, reject) =>
@@ -205,7 +369,7 @@ export async function connectToMcpServer(
 
   try {
     await Promise.race([connectPromise, timeoutPromise]);
-    const info = client.getServerVersion();
+    const info = mcpClient.getServerVersion();
     if (info) {
       protocolVersion = info.version ?? "unknown";
       serverInfo = {
@@ -214,11 +378,10 @@ export async function connectToMcpServer(
       };
     }
   } catch (err) {
+    await agent?.destroy().catch(() => undefined);
     const durationMs = Date.now() - startMs;
     const msg = redactErrorMessage(err);
-    if (err instanceof TransportError) {
-      throw err;
-    }
+    if (err instanceof TransportError) throw err;
     throw new TransportError(
       `Connection failed after ${durationMs}ms: ${msg}`,
       err,
@@ -228,13 +391,16 @@ export async function connectToMcpServer(
   const durationMs = Date.now() - startMs;
 
   return {
-    client,
+    client: mcpClient,
     transport: transport as unknown as Transport,
     protocolVersion,
     serverInfo,
     durationMs,
     httpStatus: null,
     redirectCount,
+    disposeConnection: async () => {
+      await agent?.destroy().catch(() => undefined);
+    },
   };
 }
 
