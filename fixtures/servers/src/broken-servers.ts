@@ -189,3 +189,36 @@ export async function startRedirectServer(
   });
 }
 
+/**
+ * Server that immediately redirects to a private IP address.
+ * Used to verify that the redirect-destination SSRF guard fires.
+ */
+export async function startPrivateRedirectServer(): Promise<FixtureServer> {
+  return startRawFixture((_req, res) => {
+    res.redirect(302, "https://192.168.1.1/mcp");
+  });
+}
+
+/**
+ * Server that creates a redirect loop (A → A).
+ * Our redirect loop detection should fire before the redirect-count limit.
+ */
+export async function startRedirectLoopServer(): Promise<FixtureServer> {
+  return startRawFixture((req, res) => {
+    const host = req.headers["host"] ?? "127.0.0.1";
+    res.redirect(302, `http://${host}/mcp?loop=1`);
+  });
+}
+
+/**
+ * Server that sends a Content-Length header larger than our 10 MB limit.
+ * We check the header before reading the body so no large allocation occurs.
+ */
+export async function startOversizedResponseServer(): Promise<FixtureServer> {
+  return startRawFixture((_req, res) => {
+    // 11 MB — exceeds our 10 MB limit
+    res.setHeader("Content-Length", String(11 * 1024 * 1024));
+    res.status(200).end();
+  });
+}
+

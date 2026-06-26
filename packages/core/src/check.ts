@@ -34,50 +34,46 @@ export async function runCheck(
 
     if (err instanceof SsrfError) {
       findings.push(
-        makeFinding("SSRF_BLOCKED", "FAIL", err.message, {
-          reason: err.reason,
-        }),
+        makeFinding("SSRF_BLOCKED", "FAIL", err.message, { reason: err.reason }),
       );
-    } else if (
-      err instanceof TransportError &&
-      err.message.includes("timeout")
-    ) {
+    } else if (err instanceof TransportError && err.cause instanceof SsrfError) {
+      const cause = err.cause;
+      if (cause.reason === "HTTPS_REQUIRED") {
+        findings.push(
+          makeFinding("HTTPS_REQUIRED", "FAIL", "HTTPS is required in production mode"),
+        );
+      } else if (cause.reason === "EMBEDDED_CREDENTIALS") {
+        findings.push(
+          makeFinding("EMBEDDED_CREDENTIALS", "FAIL", cause.message),
+        );
+      } else if (cause.reason === "PROTOCOL_DOWNGRADE") {
+        findings.push(
+          makeFinding("PROTOCOL_DOWNGRADE", "FAIL", "Protocol downgrade (HTTPS → HTTP) blocked"),
+        );
+      } else {
+        findings.push(makeFinding("SSRF_BLOCKED", "FAIL", cause.message, { reason: cause.reason }));
+      }
+    } else if (err instanceof TransportError && err.message.includes("timeout")) {
       findings.push(
         makeFinding("TIMEOUT", "FAIL", `Connection timed out: ${err.message}`),
       );
-    } else if (
-      err instanceof TransportError &&
-      err.message.includes("Redirect limit")
-    ) {
+    } else if (err instanceof TransportError && err.message.includes("Redirect limit")) {
       findings.push(
-        makeFinding(
-          "REDIRECT_LIMIT_EXCEEDED",
-          "FAIL",
-          err.message,
-        ),
+        makeFinding("REDIRECT_LIMIT_EXCEEDED", "FAIL", err.message),
+      );
+    } else if (err instanceof TransportError && err.message.includes("Redirect loop")) {
+      findings.push(
+        makeFinding("REDIRECT_LOOP", "FAIL", err.message),
+      );
+    } else if (err instanceof TransportError && err.message.includes("Protocol downgrade")) {
+      findings.push(
+        makeFinding("PROTOCOL_DOWNGRADE", "FAIL", err.message),
       );
     } else if (err instanceof TransportError) {
-      const cause = err.cause;
-      if (cause instanceof SsrfError && cause.reason === "HTTPS_REQUIRED") {
-        findings.push(
-          makeFinding(
-            "HTTPS_REQUIRED",
-            "FAIL",
-            "HTTPS is required in production mode",
-          ),
-        );
-      } else {
-        findings.push(
-          makeFinding("TRANSPORT_ERROR", "FAIL", err.message),
-        );
-      }
+      findings.push(makeFinding("TRANSPORT_ERROR", "FAIL", err.message));
     } else {
       findings.push(
-        makeFinding(
-          "TRANSPORT_ERROR",
-          "FAIL",
-          `Unexpected error: ${String(err)}`,
-        ),
+        makeFinding("TRANSPORT_ERROR", "FAIL", `Unexpected error: ${String(err)}`),
       );
     }
 
@@ -107,7 +103,6 @@ export async function runCheck(
     }),
   );
 
-  // Fetch tools list
   let tools: Awaited<ReturnType<typeof listTools>> = [];
   try {
     tools = await listTools(connectResult.client);
@@ -116,19 +111,18 @@ export async function runCheck(
     );
   } catch (err) {
     findings.push(
-      makeFinding(
-        "TOOLS_LIST_FAILURE",
-        "FAIL",
-        `tools/list failed: ${String(err)}`,
-      ),
+      makeFinding("TOOLS_LIST_FAILURE", "FAIL", `tools/list failed: ${String(err)}`),
     );
   }
 
-  // Validate tools
   const { toolReports, topLevelFindings } = validateTools(tools);
   findings.push(...topLevelFindings);
 
-  await connectResult.client.close();
+  try {
+    await connectResult.client.close();
+  } finally {
+    await connectResult.disposeConnection();
+  }
 
   const durationMs = Date.now() - startMs;
   const allFindings = [...findings, ...toolReports.flatMap((t) => t.findings)];
