@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": true
+  },
+  "references": [
+    { "path": "../core/tsconfig.check.json" },
+    { "path": "../reporter/tsconfig.check.json" }
+  ]
+}

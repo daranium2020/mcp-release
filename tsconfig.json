@@ -1,0 +1,9 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core/tsconfig.check.json" },
+    { "path": "packages/reporter/tsconfig.check.json" },
+    { "path": "packages/cli/tsconfig.check.json" },
+    { "path": "packages/github-action/tsconfig.check.json" }
+  ]
+}
