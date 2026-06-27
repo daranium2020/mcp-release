@@ -222,3 +222,39 @@ export async function startOversizedResponseServer(): Promise<FixtureServer> {
   });
 }
 
+/** Server that always responds 401 with a configurable body. */
+export async function startUnauthorizedServer(body: string = '{"error":"unauthorized"}', contentType = "application/json"): Promise<FixtureServer> {
+  return startRawFixture((_req, res) => {
+    res
+      .setHeader("WWW-Authenticate", 'Bearer realm="mcp", scope="read"')
+      .setHeader("Content-Type", contentType)
+      .status(401)
+      .send(body);
+  });
+}
+
+/** Server that always responds 403. */
+export async function startForbiddenServer(): Promise<FixtureServer> {
+  return startRawFixture((_req, res) => {
+    res.status(403).json({ error: "forbidden" });
+  });
+}
+
+/** Server that always responds 500. */
+export async function startInternalErrorServer(): Promise<FixtureServer> {
+  return startRawFixture((_req, res) => {
+    res.status(500).send("Internal Server Error");
+  });
+}
+
+/** Generic fixture: always responds with the given HTTP status and body. */
+export async function startHttpStatusServer(
+  status: number,
+  body: string,
+  contentType = "text/plain",
+): Promise<FixtureServer> {
+  return startRawFixture((_req, res) => {
+    res.setHeader("Content-Type", contentType).status(status).send(body);
+  });
+}
+

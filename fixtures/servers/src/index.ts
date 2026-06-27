@@ -10,5 +10,9 @@ export {
   startPrivateRedirectServer,
   startRedirectLoopServer,
   startOversizedResponseServer,
+  startUnauthorizedServer,
+  startForbiddenServer,
+  startInternalErrorServer,
+  startHttpStatusServer,
 } from "./broken-servers.js";
 export type { FixtureServer } from "./helpers.js";
