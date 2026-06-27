@@ -24,5 +24,7 @@ coverage/
 # Claude Code tool config (user-specific)
 .claude/
 
-# Vercel project linkage (local, never commit)
+# Vercel project linkage and local environment files
 .vercel/
+.env*
+!.env.example
