@@ -70,6 +70,8 @@ export class TransportError extends Error {
   constructor(
     message: string,
     public override readonly cause?: unknown,
+    /** IP address family that was pinned when the error occurred (4, 6, or null). */
+    public readonly selectedIpFamily?: 4 | 6 | null,
   ) {
     super(message);
     this.name = "TransportError";
@@ -180,9 +182,12 @@ export async function connectToMcpServer(
   // Create pinned agent for HTTPS (closes TOCTOU), or null for HTTP localhost
   let agent: Agent | null = null;
   let baseFetch: typeof globalThis.fetch;
+  let pinnedIpFamily: 4 | 6 | null = null;
 
   if (resolvedUrl.isHttps && resolvedUrl.resolvedIps.length > 0) {
     const pinnedIp = resolvedUrl.resolvedIps[0]!;
+    const ipNum = net.isIP(pinnedIp);
+    pinnedIpFamily = ipNum === 4 || ipNum === 6 ? ipNum : null;
     const connector = createPinnedConnector(
       resolvedUrl.hostname,
       pinnedIp,
@@ -385,6 +390,7 @@ export async function connectToMcpServer(
     throw new TransportError(
       `Connection failed after ${durationMs}ms: ${msg}`,
       err,
+      pinnedIpFamily,
     );
   }
 

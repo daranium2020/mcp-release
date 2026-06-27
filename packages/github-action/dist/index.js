@@ -64828,12 +64828,14 @@ var DEFAULT_TIMEOUT_MS = 1e4;
 var MAX_RESPONSE_SIZE_BYTES = 10 * 1024 * 1024;
 var MAX_HEADER_COUNT = 200;
 var TransportError = class extends Error {
-  constructor(message, cause) {
+  constructor(message, cause, selectedIpFamily) {
     super(message);
     this.cause = cause;
+    this.selectedIpFamily = selectedIpFamily;
     this.name = "TransportError";
   }
   cause;
+  selectedIpFamily;
 };
 function createPinnedConnector(pinnedHostname, pinnedIp, ssrfOpts) {
   const doConnect = (host, port, servername, isHttps, callback) => {
@@ -64898,8 +64900,11 @@ async function connectToMcpServer(serverUrl, opts = {}) {
   }
   let agent = null;
   let baseFetch;
+  let pinnedIpFamily = null;
   if (resolvedUrl.isHttps && resolvedUrl.resolvedIps.length > 0) {
     const pinnedIp = resolvedUrl.resolvedIps[0];
+    const ipNum = import_net.default.isIP(pinnedIp);
+    pinnedIpFamily = ipNum === 4 || ipNum === 6 ? ipNum : null;
     const connector = createPinnedConnector(
       resolvedUrl.hostname,
       pinnedIp,
@@ -65038,7 +65043,8 @@ async function connectToMcpServer(serverUrl, opts = {}) {
     if (err instanceof TransportError) throw err;
     throw new TransportError(
       `Connection failed after ${durationMs2}ms: ${msg}`,
-      err
+      err,
+      pinnedIpFamily
     );
   }
   const durationMs = Date.now() - startMs;
@@ -65233,6 +65239,59 @@ function validateTools(tools) {
   }
   return { toolReports, topLevelFindings };
 }
+function buildSafeMessage(causeCode, causeSyscall) {
+  if (causeCode !== null) {
+    const parts = [causeCode];
+    if (causeSyscall !== null) parts.push(`syscall:${causeSyscall}`);
+    return parts.join(" ");
+  }
+  return "unclassified";
+}
+function collectCauseCandidates(root, maxDepth = 3) {
+  const candidates = [];
+  let cur = root;
+  for (let i = 0; i < maxDepth; i++) {
+    if (!(cur instanceof Error)) break;
+    candidates.push(cur);
+    if (cur instanceof AggregateError && cur.errors.length > 0) {
+      const first = cur.errors[0];
+      if (first instanceof Error) candidates.push(first);
+      break;
+    }
+    cur = cur.cause;
+  }
+  return candidates;
+}
+function extractCauseInfoFromCandidates(candidates) {
+  for (const c of candidates) {
+    const rawCode = c.code;
+    const code = rawCode != null ? String(rawCode) : null;
+    const syscall = c.syscall ?? null;
+    if (code !== null || syscall !== null) {
+      return { causeName: c.name, causeCode: code, causeSyscall: syscall };
+    }
+  }
+  const first = candidates[0];
+  return first ? { causeName: first.name, causeCode: null, causeSyscall: null } : { causeName: null, causeCode: null, causeSyscall: null };
+}
+function describeTransportError(err, phase) {
+  const rawErrorCode = err.code;
+  const errorCode = rawErrorCode != null ? String(rawErrorCode) : null;
+  const causeCandidates = collectCauseCandidates(err.cause);
+  const { causeName, causeCode, causeSyscall } = extractCauseInfoFromCandidates(causeCandidates);
+  const selectedIpFamily = err.selectedIpFamily ?? null;
+  const safeMessage = buildSafeMessage(causeCode ?? errorCode, causeSyscall);
+  return {
+    phase,
+    errorName: err.name,
+    errorCode,
+    causeName,
+    causeCode,
+    causeSyscall,
+    selectedIpFamily,
+    safeMessage
+  };
+}
 async function runCheck(serverUrl, opts = {}) {
   const checkedAt = (/* @__PURE__ */ new Date()).toISOString();
   const startMs = Date.now();
@@ -65285,6 +65344,7 @@ async function runCheck(serverUrl, opts = {}) {
         makeFinding("PROTOCOL_DOWNGRADE", "FAIL", err.message)
       );
     } else if (err instanceof TransportError) {
+      opts.onDiagnostic?.(describeTransportError(err, "transport_connect"));
       findings.push(makeFinding("TRANSPORT_ERROR", "FAIL", err.message));
     } else {
       findings.push(
