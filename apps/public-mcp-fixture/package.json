@@ -1,0 +1,24 @@
+{
+  "name": "@mcp-release/public-mcp-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Public MCP fixture server for end-to-end positive validation — deploys as an independent Vercel project",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .next dist *.tsbuildinfo next-env.d.ts"
+  },
+  "dependencies": {
+    "next": "^15.3.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@mcp-release/core": "workspace:*",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0"
+  }
+}

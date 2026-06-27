@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "pnpm -r run build",
-    "typecheck": "tsc --build && pnpm --filter @mcp-release/fixture-servers run typecheck && pnpm --filter @mcp-release/web run typecheck",
+    "typecheck": "tsc --build && pnpm --filter @mcp-release/fixture-servers run typecheck && pnpm --filter @mcp-release/web run typecheck && pnpm --filter @mcp-release/public-mcp-fixture run typecheck",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
