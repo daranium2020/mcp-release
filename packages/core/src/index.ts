@@ -22,6 +22,7 @@ export {
 } from "./ssrf.js";
 export { type DnsRecord, type DnsResolver, systemDnsResolver } from "./dns.js";
 export { TransportError, type ConnectOptions, type ConnectResult } from "./transport.js";
+export { describeTransportError, type TransportDiagnostic } from "./diagnostics.js";
 export { redactUrl, redactHeaders, redactString, redactErrorMessage } from "./redact.js";
 export { validateJsonSchema } from "./schema-validator.js";
 export { validateTool, validateTools } from "./validator.js";

@@ -1,4 +1,4 @@
-import { runCheck, redactErrorMessage, type CheckOptions, type CheckReport } from "@mcp-release/core";
+import { runCheck, redactErrorMessage, type CheckOptions, type CheckReport, type TransportDiagnostic } from "@mcp-release/core";
 import {
   defaultRateLimiter,
   type RateLimiter,
@@ -197,7 +197,17 @@ export async function handleCheckRequest(
     );
 
     const report = await Promise.race([
-      validator(rawEndpoint.trim(), { timeoutMs, allowHttp: false }),
+      validator(rawEndpoint.trim(), {
+        timeoutMs,
+        allowHttp: false,
+        onDiagnostic: (d: TransportDiagnostic) => {
+          // Emit a fixed-schema structured record to server-side logs only.
+          // Never forwarded to the client response.
+          console.error(
+            JSON.stringify({ level: "error", event: "transport_diagnostic", ...d }),
+          );
+        },
+      }),
       execDeadline,
     ]);
 

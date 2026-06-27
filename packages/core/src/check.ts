@@ -3,12 +3,18 @@ import { connectToMcpServer, listTools, TransportError, type ConnectOptions } fr
 import { validateTools } from "./validator.js";
 import { SsrfError } from "./ssrf.js";
 import { redactUrl } from "./redact.js";
+import { describeTransportError, type TransportDiagnostic } from "./diagnostics.js";
 
 export type CheckOptions = {
   timeoutMs?: number;
   maxRedirects?: number;
   /** Allow HTTP (only valid in test/development environments) */
   allowHttp?: boolean;
+  /**
+   * Optional callback invoked on transport failure with a sanitized diagnostic
+   * record. Called server-side only; never forwarded to the client response.
+   */
+  onDiagnostic?: (d: TransportDiagnostic) => void;
 };
 
 export async function runCheck(
@@ -70,6 +76,7 @@ export async function runCheck(
         makeFinding("PROTOCOL_DOWNGRADE", "FAIL", err.message),
       );
     } else if (err instanceof TransportError) {
+      opts.onDiagnostic?.(describeTransportError(err, "transport_connect"));
       findings.push(makeFinding("TRANSPORT_ERROR", "FAIL", err.message));
     } else {
       findings.push(
