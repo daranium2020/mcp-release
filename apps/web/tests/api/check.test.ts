@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { handleCheckRequest } from "../../src/app/api/check/handler.js";
 import { createRateLimiter } from "../../src/lib/rate-limit.js";
 import { createConcurrencyGuard } from "../../src/lib/concurrency.js";
-import type { CheckReport } from "@mcp-launch/core";
+import type { CheckReport } from "@mcp-release/core";
 
 // Minimal report that satisfies all required fields
 const PASS_REPORT: CheckReport = {

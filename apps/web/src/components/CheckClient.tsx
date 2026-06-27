@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import type { CheckReport } from "@mcp-launch/core";
+import type { CheckReport } from "@mcp-release/core";
 import type { CheckApiResponse } from "../types/api";
 import Results from "./Results";
 import styles from "./CheckClient.module.css";

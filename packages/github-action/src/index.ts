@@ -1,6 +1,6 @@
 import * as core from "@actions/core";
-import { runCheck, redactErrorMessage } from "@mcp-launch/core";
-import { toJson, toMarkdown } from "@mcp-launch/reporter";
+import { runCheck, redactErrorMessage } from "@mcp-release/core";
+import { toJson, toMarkdown } from "@mcp-release/reporter";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseInputs } from "./inputs.js";
@@ -45,7 +45,7 @@ async function main(): Promise<void> {
   // Write report files
   if (inputs.format === "json" || inputs.format === "both") {
     mkdirSync(outDir, { recursive: true });
-    const jsonPath = path.join(outDir, "mcp-launch-report.json");
+    const jsonPath = path.join(outDir, "mcp-release-report.json");
     writeFileSync(jsonPath, toJson(report), "utf8");
     core.setOutput("report-json", jsonPath);
     core.info(`JSON report written to: ${jsonPath}`);
@@ -53,7 +53,7 @@ async function main(): Promise<void> {
 
   if (inputs.format === "markdown" || inputs.format === "both") {
     mkdirSync(outDir, { recursive: true });
-    const mdPath = path.join(outDir, "mcp-launch-report.md");
+    const mdPath = path.join(outDir, "mcp-release-report.md");
     writeFileSync(mdPath, toMarkdown(report), "utf8");
     core.setOutput("report-markdown", mdPath);
     core.info(`Markdown report written to: ${mdPath}`);

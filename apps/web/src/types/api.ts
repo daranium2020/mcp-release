@@ -1,4 +1,4 @@
-import type { CheckReport } from "@mcp-launch/core";
+import type { CheckReport } from "@mcp-release/core";
 
 export type CheckRequest = {
   endpoint: string;

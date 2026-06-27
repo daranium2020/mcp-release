@@ -1,5 +1,5 @@
 import kleur from "kleur";
-import type { CheckReport, Finding } from "@mcp-launch/core";
+import type { CheckReport, Finding } from "@mcp-release/core";
 
 function severityColor(s: string): string {
   if (s === "FAIL") return kleur.red().bold(s);
@@ -14,7 +14,7 @@ function printFinding(f: Finding, indent = "  "): string {
 export function toTerminal(report: CheckReport): string {
   const lines: string[] = [];
 
-  lines.push(kleur.bold(`\nMCP Launch — ${report.serverUrl}`));
+  lines.push(kleur.bold(`\nMCP Release — ${report.serverUrl}`));
   lines.push(`Status: ${severityColor(report.overallStatus)}`);
   lines.push(`Duration: ${report.durationMs}ms  |  Checked at: ${report.checkedAt}`);
   if (report.protocolVersion) {

@@ -1,5 +1,5 @@
 import * as core from "@actions/core";
-import type { Finding } from "@mcp-launch/core";
+import type { Finding } from "@mcp-release/core";
 
 /**
  * Emit GitHub annotations for all WARNING and FAIL findings.

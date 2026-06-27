@@ -1,10 +1,10 @@
 {
-  "name": "@mcp-launch/cli",
+  "name": "@mcp-release/cli",
   "version": "0.0.1",
   "private": true,
   "type": "module",
   "bin": {
-    "mcp-launch": "./dist/index.js"
+    "mcp-release": "./dist/index.js"
   },
   "exports": {
     ".": {
@@ -18,8 +18,8 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "@mcp-launch/core": "workspace:*",
-    "@mcp-launch/reporter": "workspace:*",
+    "@mcp-release/core": "workspace:*",
+    "@mcp-release/reporter": "workspace:*",
     "commander": "^12.0.0"
   },
   "devDependencies": {

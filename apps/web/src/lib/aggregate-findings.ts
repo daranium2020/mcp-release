@@ -1,4 +1,4 @@
-import type { CheckReport, Finding, FindingSeverity } from "@mcp-launch/core";
+import type { CheckReport, Finding, FindingSeverity } from "@mcp-release/core";
 
 export type FindingCounts = {
   fail: number;

@@ -1,6 +1,6 @@
 import { program } from "commander";
-import { runCheck } from "@mcp-launch/core";
-import { toJson, toMarkdown, toTerminal } from "@mcp-launch/reporter";
+import { runCheck } from "@mcp-release/core";
+import { toJson, toMarkdown, toTerminal } from "@mcp-release/reporter";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -11,7 +11,7 @@ const pkg = JSON.parse(
 ) as { version: string };
 
 program
-  .name("mcp-launch")
+  .name("mcp-release")
   .description("Release validation checker for remote MCP servers")
   .version(pkg.version);
 

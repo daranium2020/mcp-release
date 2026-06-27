@@ -20,7 +20,7 @@ export default function HomePage() {
         <CheckClient />
         <section className={styles.checks} aria-labelledby="checks-heading">
           <h2 id="checks-heading" className={styles.checksHeading}>
-            What MCP Launch checks
+            What MCP Release checks
           </h2>
           <ul className={styles.checksList}>
             <li className={styles.checksItem}>

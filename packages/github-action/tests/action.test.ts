@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { CheckReport } from "@mcp-launch/core";
+import type { CheckReport } from "@mcp-release/core";
 
 // Mock @actions/core before importing action code
 vi.mock("@actions/core", () => ({
@@ -17,8 +17,8 @@ vi.mock("@actions/core", () => ({
 }));
 
 // Mock runCheck — we never want real network calls in unit tests
-vi.mock("@mcp-launch/core", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@mcp-launch/core")>();
+vi.mock("@mcp-release/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@mcp-release/core")>();
   return {
     ...actual,
     runCheck: vi.fn(),
@@ -26,7 +26,7 @@ vi.mock("@mcp-launch/core", async (importOriginal) => {
 });
 
 import * as core from "@actions/core";
-import * as coreModule from "@mcp-launch/core";
+import * as coreModule from "@mcp-release/core";
 
 const STATUS_ORDER: Record<string, number> = { PASS: 0, WARNING: 1, FAIL: 2 };
 

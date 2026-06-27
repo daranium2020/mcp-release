@@ -1,8 +1,8 @@
 {
-  "name": "@mcp-launch/web",
+  "name": "@mcp-release/web",
   "version": "0.0.1",
   "private": true,
-  "description": "Web interface for MCP Launch release validation",
+  "description": "Web interface for MCP Release validation",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -11,8 +11,8 @@
     "clean": "rm -rf .next dist *.tsbuildinfo"
   },
   "dependencies": {
-    "@mcp-launch/core": "workspace:*",
-    "@mcp-launch/reporter": "workspace:*",
+    "@mcp-release/core": "workspace:*",
+    "@mcp-release/reporter": "workspace:*",
     "next": "^15.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

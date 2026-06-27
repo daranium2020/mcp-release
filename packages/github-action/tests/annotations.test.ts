@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { emitAnnotations } from "../src/annotations.js";
-import type { Finding } from "@mcp-launch/core";
+import type { Finding } from "@mcp-release/core";
 
 vi.mock("@actions/core", () => ({
   getInput: vi.fn(),

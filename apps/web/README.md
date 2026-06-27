@@ -1,6 +1,6 @@
-# @mcp-launch/web
+# @mcp-release/web
 
-Next.js 15 (App Router) web interface for MCP Launch release validation.
+Next.js 15 (App Router) web interface for MCP Release validation.
 
 > **Status**: Milestone 3 local MVP. Not yet publicly deployed. No authentication, billing, or persistent storage.
 
@@ -114,7 +114,7 @@ pnpm dev                      # start dev server on http://localhost:3000
 Or from the workspace root:
 
 ```bash
-pnpm install && pnpm -r run build --filter @mcp-launch/core --filter @mcp-launch/reporter
+pnpm install && pnpm -r run build --filter @mcp-release/core --filter @mcp-release/reporter
 cd apps/web && pnpm dev
 ```
 
