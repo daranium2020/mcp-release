@@ -1,4 +1,4 @@
-# @mcp-launch/github-action
+# @mcp-release/github-action
 
 GitHub Action that validates a remote MCP server without invoking any tools.
 
@@ -71,7 +71,7 @@ jobs:
 ## Building the distribution
 
 ```bash
-pnpm --filter @mcp-launch/github-action run build
+pnpm --filter @mcp-release/github-action run build
 ```
 
 The bundled `dist/index.js` must be committed to the repository for the action to work. The CI workflow verifies the bundle is current on every push.

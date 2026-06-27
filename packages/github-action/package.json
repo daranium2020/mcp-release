@@ -1,5 +1,5 @@
 {
-  "name": "@mcp-launch/github-action",
+  "name": "@mcp-release/github-action",
   "version": "0.1.0",
   "private": true,
   "description": "GitHub Action for MCP server release validation",
@@ -11,8 +11,8 @@
   },
   "dependencies": {
     "@actions/core": "^1.11.0",
-    "@mcp-launch/core": "workspace:*",
-    "@mcp-launch/reporter": "workspace:*"
+    "@mcp-release/core": "workspace:*",
+    "@mcp-release/reporter": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

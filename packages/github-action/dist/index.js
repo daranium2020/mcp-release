@@ -65005,7 +65005,7 @@ async function connectToMcpServer(serverUrl, opts = {}) {
     fetch: fetchWithGuard
   });
   const mcpClient = new Client({
-    name: "mcp-launch-checker",
+    name: "mcp-release-checker",
     version: "0.0.1"
   });
   const connectPromise = mcpClient.connect(
@@ -65473,7 +65473,7 @@ ${rows}
 }
 function toMarkdown(report) {
   const lines = [];
-  lines.push(`## MCP Launch Report`);
+  lines.push(`## MCP Release Report`);
   lines.push(``);
   lines.push(`**Server:** \`${report.serverUrl}\``);
   lines.push(`**Status:** ${severityBadge(report.overallStatus)}`);
@@ -65577,7 +65577,7 @@ var STATUS_EMOJI = {
 async function writeJobSummary(report) {
   const emoji2 = STATUS_EMOJI[report.overallStatus] ?? "\u2753";
   const md = toMarkdown(report);
-  await core3.summary.addHeading(`${emoji2} MCP Launch \u2014 Release Check`, 2).addRaw(`
+  await core3.summary.addHeading(`${emoji2} MCP Release \u2014 Release Check`, 2).addRaw(`
 ${md}
 `).write();
 }
@@ -65608,14 +65608,14 @@ async function main() {
   const outDir = inputs.outputDirectory !== "" ? import_node_path.default.resolve(inputs.outputDirectory) : process.env["RUNNER_TEMP"] ?? "/tmp";
   if (inputs.format === "json" || inputs.format === "both") {
     (0, import_node_fs.mkdirSync)(outDir, { recursive: true });
-    const jsonPath = import_node_path.default.join(outDir, "mcp-launch-report.json");
+    const jsonPath = import_node_path.default.join(outDir, "mcp-release-report.json");
     (0, import_node_fs.writeFileSync)(jsonPath, toJson(report), "utf8");
     core4.setOutput("report-json", jsonPath);
     core4.info(`JSON report written to: ${jsonPath}`);
   }
   if (inputs.format === "markdown" || inputs.format === "both") {
     (0, import_node_fs.mkdirSync)(outDir, { recursive: true });
-    const mdPath = import_node_path.default.join(outDir, "mcp-launch-report.md");
+    const mdPath = import_node_path.default.join(outDir, "mcp-release-report.md");
     (0, import_node_fs.writeFileSync)(mdPath, toMarkdown(report), "utf8");
     core4.setOutput("report-markdown", mdPath);
     core4.info(`Markdown report written to: ${mdPath}`);

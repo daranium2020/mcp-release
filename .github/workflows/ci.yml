@@ -51,9 +51,9 @@ jobs:
         run: |
           # Rebuild the action bundle and check whether it differs from what is committed.
           # A diff means the bundle was not updated before commit.
-          pnpm --filter @mcp-launch/github-action run build
+          pnpm --filter @mcp-release/github-action run build
           if ! git diff --quiet packages/github-action/dist/index.js; then
             echo "::error::GitHub Action bundle is out of date."
-            echo "Run 'pnpm --filter @mcp-launch/github-action run build' and commit packages/github-action/dist/index.js."
+            echo "Run 'pnpm --filter @mcp-release/github-action run build' and commit packages/github-action/dist/index.js."
             exit 1
           fi

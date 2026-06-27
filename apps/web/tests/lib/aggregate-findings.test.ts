@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { CheckReport } from "@mcp-launch/core";
+import type { CheckReport } from "@mcp-release/core";
 import { aggregateFindings } from "../../src/lib/aggregate-findings.js";
 
 const BASE: CheckReport = {

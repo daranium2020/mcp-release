@@ -31,7 +31,7 @@ vi.mock("@actions/core", () => ({
 import * as core from "@actions/core";
 import { parseInputs } from "../src/inputs.js";
 import { emitAnnotations } from "../src/annotations.js";
-import { runCheck, redactErrorMessage } from "@mcp-launch/core";
+import { runCheck, redactErrorMessage } from "@mcp-release/core";
 
 const STATUS_ORDER: Record<string, number> = { PASS: 0, WARNING: 1, FAIL: 2 };
 

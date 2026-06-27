@@ -18,8 +18,8 @@ export default defineConfig({
     // require `pnpm build` to have run — those are covered by the CI ordering
     // (build step runs before test step).
     alias: {
-      "@mcp-launch/core": resolve(__dirname, "packages/core/src/index.ts"),
-      "@mcp-launch/reporter": resolve(__dirname, "packages/reporter/src/index.ts"),
+      "@mcp-release/core": resolve(__dirname, "packages/core/src/index.ts"),
+      "@mcp-release/reporter": resolve(__dirname, "packages/reporter/src/index.ts"),
     },
   },
   test: {

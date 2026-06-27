@@ -1,4 +1,4 @@
-import type { CheckReport, Finding } from "@mcp-launch/core";
+import type { CheckReport, Finding } from "@mcp-release/core";
 
 function severityBadge(s: string): string {
   if (s === "FAIL") return "🔴 FAIL";
@@ -18,7 +18,7 @@ function findingsTable(findings: Finding[]): string {
 export function toMarkdown(report: CheckReport): string {
   const lines: string[] = [];
 
-  lines.push(`## MCP Launch Report`);
+  lines.push(`## MCP Release Report`);
   lines.push(``);
   lines.push(`**Server:** \`${report.serverUrl}\``);
   lines.push(`**Status:** ${severityBadge(report.overallStatus)}`);

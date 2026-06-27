@@ -348,7 +348,7 @@ export async function connectToMcpServer(
   });
 
   const mcpClient = new Client({
-    name: "mcp-launch-checker",
+    name: "mcp-release-checker",
     version: "0.0.1",
   });
 

@@ -53,10 +53,10 @@ importers:
 
   apps/web:
     dependencies:
-      '@mcp-launch/core':
+      '@mcp-release/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@mcp-launch/reporter':
+      '@mcp-release/reporter':
         specifier: workspace:*
         version: link:../../packages/reporter
       next:
@@ -103,10 +103,10 @@ importers:
 
   packages/cli:
     dependencies:
-      '@mcp-launch/core':
+      '@mcp-release/core':
         specifier: workspace:*
         version: link:../core
-      '@mcp-launch/reporter':
+      '@mcp-release/reporter':
         specifier: workspace:*
         version: link:../reporter
       commander:
@@ -156,10 +156,10 @@ importers:
       '@actions/core':
         specifier: ^1.11.0
         version: 1.11.1
-      '@mcp-launch/core':
+      '@mcp-release/core':
         specifier: workspace:*
         version: link:../core
-      '@mcp-launch/reporter':
+      '@mcp-release/reporter':
         specifier: workspace:*
         version: link:../reporter
     devDependencies:
@@ -175,7 +175,7 @@ importers:
 
   packages/reporter:
     dependencies:
-      '@mcp-launch/core':
+      '@mcp-release/core':
         specifier: workspace:*
         version: link:../core
       kleur:

@@ -1,4 +1,4 @@
-name: 'MCP Launch — Release Checker'
+name: 'MCP Release — Release Checker'
 description: >
   Connects to a remote MCP server, validates tool definitions, and produces
   a structured report. Tools are never invoked.

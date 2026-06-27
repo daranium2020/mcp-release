@@ -1,4 +1,4 @@
-import { runCheck, redactErrorMessage, type CheckOptions, type CheckReport } from "@mcp-launch/core";
+import { runCheck, redactErrorMessage, type CheckOptions, type CheckReport } from "@mcp-release/core";
 import {
   defaultRateLimiter,
   type RateLimiter,

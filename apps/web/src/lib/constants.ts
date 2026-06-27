@@ -1,11 +1,14 @@
 // Public constants — safe to expose to the browser.
 // Never place secrets, API keys, or private configuration here.
 
-export const SITE_NAME = "MCP Launch";
+export const SITE_NAME = "MCP Release";
 export const SITE_DESCRIPTION = "Release validation for MCP servers";
 
+// Canonical public URL — used for metadataBase and Open Graph.
+export const SITE_URL = "https://mcprelease.dev";
+
 // Linked from the header — points to the public repository.
-// Replace with the actual repo URL before first public deployment.
+// Keep this as the current GitHub URL until the repository is actually renamed.
 export const GITHUB_URL = "https://github.com/daranium2020/mcp-launch";
 
 export const MIN_TIMEOUT_MS = 1_000;

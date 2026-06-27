@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { SITE_NAME, SITE_DESCRIPTION } from "../lib/constants";
+import { SITE_NAME, SITE_DESCRIPTION, SITE_URL } from "../lib/constants";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: `${SITE_NAME} — Release validation for MCP servers`,
   description: SITE_DESCRIPTION,
 };

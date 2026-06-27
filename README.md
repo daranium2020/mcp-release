@@ -1,4 +1,4 @@
-# MCP Launch
+# MCP Release
 
 Release validation and CI platform for production Model Context Protocol servers.
 

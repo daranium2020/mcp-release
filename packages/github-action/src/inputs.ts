@@ -1,5 +1,5 @@
 import * as core from "@actions/core";
-import { redactUrl } from "@mcp-launch/core";
+import { redactUrl } from "@mcp-release/core";
 
 export type ActionInputs = {
   endpoint: string;

@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback } from "react";
-import type { CheckReport, Finding, FindingSeverity } from "@mcp-launch/core";
-import { toJson } from "@mcp-launch/reporter";
-import { toMarkdown } from "@mcp-launch/reporter";
+import type { CheckReport, Finding, FindingSeverity } from "@mcp-release/core";
+import { toJson } from "@mcp-release/reporter";
+import { toMarkdown } from "@mcp-release/reporter";
 import { aggregateFindings } from "../lib/aggregate-findings";
 import styles from "./Results.module.css";
 
@@ -104,12 +104,12 @@ export default function Results({ report, onReset }: Props) {
 
   const handleDownloadJson = useCallback(() => {
     const json = toJson(report);
-    download(json, "mcp-launch-report.json", "application/json");
+    download(json, "mcp-release-report.json", "application/json");
   }, [report]);
 
   const handleDownloadMarkdown = useCallback(() => {
     const md = toMarkdown(report);
-    download(md, "mcp-launch-report.md", "text/markdown");
+    download(md, "mcp-release-report.md", "text/markdown");
   }, [report]);
 
   return (

@@ -1,5 +1,5 @@
 {
-  "name": "@mcp-launch/fixture-servers",
+  "name": "@mcp-release/fixture-servers",
   "version": "0.0.1",
   "private": true,
   "type": "module",
