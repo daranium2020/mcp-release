@@ -79,6 +79,33 @@ export class TransportError extends Error {
 }
 
 /**
+ * Resolve a connector port string to a validated integer.
+ *
+ * WHATWG URL omits the port for HTTPS (443) and HTTP (80) defaults — both
+ * `https://example.com/mcp` and `https://example.com:443/mcp` produce an
+ * empty string from URL.port. Passing that empty string to parseInt() returns
+ * NaN, which Node.js rejects with RangeError: ERR_SOCKET_BAD_PORT.
+ *
+ * Rules:
+ *   - Empty string → protocol default (443 for HTTPS, 80 for HTTP).
+ *   - Non-empty string → must be decimal digits only; must be 1–65535.
+ *   - Anything else → throws RangeError (caller must call callback(err, null)).
+ */
+export function resolveConnectorPort(portStr: string, isHttps: boolean): number {
+  if (portStr === "") {
+    return isHttps ? 443 : 80;
+  }
+  if (!/^\d+$/.test(portStr)) {
+    throw new RangeError(`Invalid port value: "${portStr}"`);
+  }
+  const p = Number(portStr);
+  if (p === 0 || p > 65535) {
+    throw new RangeError(`Port ${p} is out of the valid range 1–65535`);
+  }
+  return p;
+}
+
+/**
  * Build an undici connector that:
  *  - For `pinnedHostname`: always routes to `pinnedIp` (pre-validated, no TOCTOU).
  *  - For any other hostname (cross-origin redirect target): resolves DNS inline
@@ -113,9 +140,16 @@ function createPinnedConnector(
   };
 
   return (opts: buildConnector.Options, callback: buildConnector.Callback) => {
-    const port = parseInt(opts.port, 10);
     const isHttps = opts.protocol === "https:";
     const sni = opts.servername ?? opts.hostname;
+
+    let port: number;
+    try {
+      port = resolveConnectorPort(opts.port, isHttps);
+    } catch (err) {
+      callback(err instanceof Error ? err : new Error(String(err)), null);
+      return;
+    }
 
     if (opts.hostname === pinnedHostname) {
       // Initial hostname — use pre-validated pinned IP, no additional DNS call
@@ -123,8 +157,12 @@ function createPinnedConnector(
       return;
     }
 
-    // Cross-origin redirect target — resolve and validate inline
-    const probeUrl = `${opts.protocol}//${opts.hostname}:${opts.port}`;
+    // Cross-origin redirect target — resolve and validate inline.
+    // Omit the port component when empty so new URL() inside resolveUrlForPinning
+    // does not see a trailing colon (which would be a parse error).
+    const probeUrl = opts.port
+      ? `${opts.protocol}//${opts.hostname}:${opts.port}`
+      : `${opts.protocol}//${opts.hostname}`;
     resolveUrlForPinning(probeUrl, ssrfOpts)
       .then((result) => {
         const ip = result.resolvedIps[0];

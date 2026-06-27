@@ -64837,6 +64837,19 @@ var TransportError = class extends Error {
   cause;
   selectedIpFamily;
 };
+function resolveConnectorPort(portStr, isHttps) {
+  if (portStr === "") {
+    return isHttps ? 443 : 80;
+  }
+  if (!/^\d+$/.test(portStr)) {
+    throw new RangeError(`Invalid port value: "${portStr}"`);
+  }
+  const p = Number(portStr);
+  if (p === 0 || p > 65535) {
+    throw new RangeError(`Port ${p} is out of the valid range 1\u201365535`);
+  }
+  return p;
+}
 function createPinnedConnector(pinnedHostname, pinnedIp, ssrfOpts) {
   const doConnect = (host, port, servername, isHttps, callback) => {
     if (isHttps) {
@@ -64856,14 +64869,20 @@ function createPinnedConnector(pinnedHostname, pinnedIp, ssrfOpts) {
     }
   };
   return (opts, callback) => {
-    const port = parseInt(opts.port, 10);
     const isHttps = opts.protocol === "https:";
     const sni = opts.servername ?? opts.hostname;
+    let port;
+    try {
+      port = resolveConnectorPort(opts.port, isHttps);
+    } catch (err) {
+      callback(err instanceof Error ? err : new Error(String(err)), null);
+      return;
+    }
     if (opts.hostname === pinnedHostname) {
       doConnect(pinnedIp, port, sni, isHttps, callback);
       return;
     }
-    const probeUrl = `${opts.protocol}//${opts.hostname}:${opts.port}`;
+    const probeUrl = opts.port ? `${opts.protocol}//${opts.hostname}:${opts.port}` : `${opts.protocol}//${opts.hostname}`;
     resolveUrlForPinning(probeUrl, ssrfOpts).then((result) => {
       const ip = result.resolvedIps[0];
       if (!ip) {
