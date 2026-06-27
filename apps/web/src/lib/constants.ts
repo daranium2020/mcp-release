@@ -8,8 +8,7 @@ export const SITE_DESCRIPTION = "Release validation for MCP servers";
 export const SITE_URL = "https://mcprelease.dev";
 
 // Linked from the header — points to the public repository.
-// Keep this as the current GitHub URL until the repository is actually renamed.
-export const GITHUB_URL = "https://github.com/daranium2020/mcp-launch";
+export const GITHUB_URL = "https://github.com/daranium2020/mcp-release";
 
 export const MIN_TIMEOUT_MS = 1_000;
 export const MAX_TIMEOUT_MS = 30_000;
