@@ -39,8 +39,11 @@ export default [
     ignores: [
       "**/dist/**",
       "**/node_modules/**",
+      "**/.next/**",
       "vitest.config.ts",
       "**/tsup.config.ts",
+      "**/next.config.ts",
+      "**/next-env.d.ts",
     ],
   },
 ];

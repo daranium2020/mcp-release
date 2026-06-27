@@ -5,6 +5,12 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
+  esbuild: {
+    // Automatic JSX transform for React 17+ components in test files.
+    // Only activates for .tsx files; no effect on plain .ts tests.
+    jsx: "automatic",
+    jsxImportSource: "react",
+  },
   resolve: {
     // Resolve internal workspace packages to their TypeScript source so tests
     // run without requiring a prior `pnpm build`. The CLI integration tests
@@ -19,7 +25,12 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
-    include: ["packages/*/tests/**/*.test.ts", "fixtures/*/tests/**/*.test.ts"],
+    include: [
+      "packages/*/tests/**/*.test.ts",
+      "fixtures/*/tests/**/*.test.ts",
+      "apps/*/tests/**/*.test.ts",
+      "apps/*/tests/**/*.test.tsx",
+    ],
     testTimeout: 15000,
     hookTimeout: 15000,
     pool: "forks",

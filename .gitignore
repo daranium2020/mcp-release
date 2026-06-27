@@ -13,6 +13,7 @@ npm-debug.log*
 
 # Build caches
 coverage/
+.next/
 
 # OS / editor
 .DS_Store
