@@ -1,0 +1,240 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+/* ---- Form ---- */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.inputRow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.inputGroup {
+  display: flex;
+  gap: 0.625rem;
+  align-items: stretch;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6875rem 0.875rem;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  color: var(--text);
+  transition: border-color 0.15s;
+}
+
+.input::placeholder {
+  color: var(--text-dim);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--blue-dim);
+}
+
+.input:focus-visible {
+  outline: none;
+}
+
+.input[aria-invalid="true"] {
+  border-color: var(--fail);
+}
+
+.input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.submitBtn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--blue);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.6875rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.submitBtn:hover:not(:disabled) {
+  background: var(--blue-hover);
+}
+
+.submitBtn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.fieldError {
+  font-size: 0.8125rem;
+  color: var(--fail);
+}
+
+/* ---- API-level error ---- */
+.apiError {
+  background: var(--fail-bg);
+  border: 1px solid var(--fail-border);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.apiErrorHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.apiErrorCode {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--fail);
+  background: rgba(240, 82, 82, 0.12);
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  border: 1px solid var(--fail-border);
+}
+
+.apiErrorTitle {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 0.9375rem;
+}
+
+.apiErrorMessage {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.retryBtn {
+  align-self: flex-start;
+  margin-top: 0.25rem;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.375rem 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.retryBtn:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+/* ---- Safety marker ---- */
+.safetyMarker {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  letter-spacing: 0.01em;
+  margin-top: 0.125rem;
+}
+
+/* ---- Results wrapper ---- */
+.resultsWrapper {
+  /* Compensate for the sticky header (56px) so scrollIntoView does not
+     hide the top of the results panel behind it. Applies on all viewports
+     because the header is always sticky. */
+  scroll-margin-top: 72px;
+}
+
+/* ---- Dev fixture panel (development only, never shown in production) ---- */
+.devPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: 1px dashed var(--warn-border);
+  border-radius: 8px;
+  background: rgba(240, 165, 43, 0.03);
+}
+
+.devLabel {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--warn);
+}
+
+.devBtns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.devBtn {
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.25rem 0.625rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.devBtn:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+@media (max-width: 600px) {
+  .inputGroup {
+    flex-direction: column;
+  }
+
+  .submitBtn {
+    width: 100%;
+    justify-content: center;
+  }
+}

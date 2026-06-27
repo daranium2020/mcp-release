@@ -1,0 +1,30 @@
+.footer {
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg);
+}
+
+.inner {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 1.25rem var(--page-pad);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+}
+
+.name {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.sep {
+  font-size: 0.8125rem;
+  color: var(--text-dim);
+}
+
+.note {
+  font-size: 0.8125rem;
+  color: var(--text-dim);
+}
