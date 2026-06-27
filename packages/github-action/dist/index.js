@@ -64475,6 +64475,8 @@ var FindingSeverity = external_exports.enum(["PASS", "WARNING", "FAIL"]);
 var FindingCode = external_exports.enum([
   // Transport / connectivity
   "TRANSPORT_ERROR",
+  "AUTH_REQUIRED",
+  "REMOTE_HTTP_ERROR",
   "HTTP_ERROR",
   "TIMEOUT",
   "REDIRECT_LIMIT_EXCEEDED",
@@ -65311,6 +65313,13 @@ function describeTransportError(err, phase) {
     safeMessage
   };
 }
+function extractHttpStatus(err) {
+  const cause = err.cause;
+  if (cause == null || typeof cause !== "object") return null;
+  const code = cause.code;
+  if (typeof code !== "number" || !Number.isFinite(code)) return null;
+  return code;
+}
 async function runCheck(serverUrl, opts = {}) {
   const checkedAt = (/* @__PURE__ */ new Date()).toISOString();
   const startMs = Date.now();
@@ -65346,25 +65355,48 @@ async function runCheck(serverUrl, opts = {}) {
       } else {
         findings.push(makeFinding("SSRF_BLOCKED", "FAIL", cause.message, { reason: cause.reason }));
       }
-    } else if (err instanceof TransportError && err.message.includes("timeout")) {
-      findings.push(
-        makeFinding("TIMEOUT", "FAIL", `Connection timed out: ${err.message}`)
-      );
-    } else if (err instanceof TransportError && err.message.includes("Redirect limit")) {
-      findings.push(
-        makeFinding("REDIRECT_LIMIT_EXCEEDED", "FAIL", err.message)
-      );
-    } else if (err instanceof TransportError && err.message.includes("Redirect loop")) {
-      findings.push(
-        makeFinding("REDIRECT_LOOP", "FAIL", err.message)
-      );
-    } else if (err instanceof TransportError && err.message.includes("Protocol downgrade")) {
-      findings.push(
-        makeFinding("PROTOCOL_DOWNGRADE", "FAIL", err.message)
-      );
     } else if (err instanceof TransportError) {
-      opts.onDiagnostic?.(describeTransportError(err, "transport_connect"));
-      findings.push(makeFinding("TRANSPORT_ERROR", "FAIL", err.message));
+      const httpStatus = extractHttpStatus(err);
+      if (httpStatus === 401) {
+        findings.push(
+          makeFinding(
+            "AUTH_REQUIRED",
+            "WARNING",
+            "Server requires authorization. Authenticated checks were not performed."
+          )
+        );
+      } else if (httpStatus === 403) {
+        findings.push(
+          makeFinding("HTTP_ERROR", "FAIL", "Server returned 403 Forbidden. Access denied.")
+        );
+      } else if (httpStatus !== null) {
+        findings.push(
+          makeFinding(
+            "REMOTE_HTTP_ERROR",
+            "FAIL",
+            "Remote MCP server returned an unexpected HTTP response."
+          )
+        );
+      } else if (err.message.includes("timeout")) {
+        findings.push(
+          makeFinding("TIMEOUT", "FAIL", `Connection timed out: ${err.message}`)
+        );
+      } else if (err.message.includes("Redirect limit")) {
+        findings.push(
+          makeFinding("REDIRECT_LIMIT_EXCEEDED", "FAIL", err.message)
+        );
+      } else if (err.message.includes("Redirect loop")) {
+        findings.push(
+          makeFinding("REDIRECT_LOOP", "FAIL", err.message)
+        );
+      } else if (err.message.includes("Protocol downgrade")) {
+        findings.push(
+          makeFinding("PROTOCOL_DOWNGRADE", "FAIL", err.message)
+        );
+      } else {
+        opts.onDiagnostic?.(describeTransportError(err, "transport_connect"));
+        findings.push(makeFinding("TRANSPORT_ERROR", "FAIL", err.message));
+      }
     } else {
       findings.push(
         makeFinding("TRANSPORT_ERROR", "FAIL", `Unexpected error: ${String(err)}`)
@@ -65375,7 +65407,7 @@ async function runCheck(serverUrl, opts = {}) {
       serverUrl: safeUrl,
       checkedAt,
       durationMs: durationMs2,
-      overallStatus: "FAIL",
+      overallStatus: worstSeverity(findings),
       transport: {
         httpStatus: null,
         httpStatusText: null,

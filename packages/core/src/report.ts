@@ -6,6 +6,8 @@ export type FindingSeverity = z.infer<typeof FindingSeverity>;
 export const FindingCode = z.enum([
   // Transport / connectivity
   "TRANSPORT_ERROR",
+  "AUTH_REQUIRED",
+  "REMOTE_HTTP_ERROR",
   "HTTP_ERROR",
   "TIMEOUT",
   "REDIRECT_LIMIT_EXCEEDED",

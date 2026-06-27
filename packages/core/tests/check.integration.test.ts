@@ -137,7 +137,7 @@ describe("runCheck — initialization failure", () => {
 
   it("has TRANSPORT_ERROR or similar finding", async () => {
     const report = await runCheck(server.url, SSRF_OPTS);
-    const failCodes = ["TRANSPORT_ERROR", "INIT_FAILURE", "HTTP_ERROR"];
+    const failCodes = ["TRANSPORT_ERROR", "INIT_FAILURE", "HTTP_ERROR", "REMOTE_HTTP_ERROR"];
     expect(report.findings.some((f) => failCodes.includes(f.code))).toBe(true);
   });
 });
