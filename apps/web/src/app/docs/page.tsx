@@ -25,15 +25,14 @@ export default function DocsPage() {
               Overview
             </h2>
             <p>
-              MCP Release validates the runtime behavior of a remote MCP
-              server before you ship it to production. It performs a
-              non-destructive protocol handshake, lists available tools,
-              validates their schemas, and checks network safety — without
-              ever invoking a tool or requiring credentials.
+              MCP Release checks a remote MCP server. It verifies the
+              protocol handshake, discovers available tools, validates their
+              schemas, and checks network configuration. It does not invoke
+              tools or require credentials.
             </p>
             <p>
               Results are structured findings classified as PASS, WARNING, or
-              FAIL and are exportable as JSON or Markdown.
+              FAIL. Findings can be exported as JSON or Markdown.
             </p>
           </section>
 
@@ -76,24 +75,23 @@ export default function DocsPage() {
             </h2>
             <ul className={styles.ul}>
               <li>
-                Must use <strong>HTTPS</strong> — HTTP endpoints are rejected
-                before any connection is attempted.
+                Must use <strong>HTTPS</strong>. HTTP endpoints are rejected
+                before any connection.
               </li>
               <li>
-                Must be publicly reachable — private IP ranges, loopback,
+                Must be publicly reachable. Private IP ranges, loopback,
                 link-local, and cloud-metadata addresses are blocked.
               </li>
               <li>
-                Must not contain embedded credentials in the URL — for
-                example,{" "}
+                Must not contain embedded credentials. For example,{" "}
                 <code className={styles.code}>
                   https://user:secret@host/mcp
                 </code>{" "}
                 is rejected.
               </li>
               <li>
-                No credentials are accepted, forwarded, or stored — MCP
-                Release only connects as an unauthenticated client.
+                No credentials are accepted, forwarded, or stored. MCP
+                Release connects as an unauthenticated client.
               </li>
             </ul>
           </section>
@@ -111,34 +109,34 @@ export default function DocsPage() {
             </ul>
             <h3 className={styles.h3}>Tool schemas</h3>
             <ul className={styles.ul}>
-              <li>Tool names — non-empty, valid characters</li>
-              <li>Tool descriptions — present and non-empty</li>
+              <li>Tool names (non-empty, valid characters)</li>
+              <li>Tool descriptions (present and non-empty)</li>
               <li>
-                <code className={styles.code}>inputSchema</code> — valid JSON
+                <code className={styles.code}>inputSchema</code>: valid JSON
                 Schema, compilable by Ajv
               </li>
               <li>
-                <code className={styles.code}>outputSchema</code> — validated
-                if present
+                <code className={styles.code}>outputSchema</code> (validated
+                if present)
               </li>
               <li>Duplicate tool names</li>
             </ul>
             <h3 className={styles.h3}>Network safety</h3>
             <ul className={styles.ul}>
-              <li>SSRF protection — RFC 1918, loopback, link-local blocked</li>
-              <li>DNS pinning — pre-resolve, validate IP, pin TCP connection</li>
-              <li>Redirect chain validation — up to 3 hops re-validated</li>
+              <li>SSRF protection (RFC 1918, loopback, link-local blocked)</li>
+              <li>DNS pinning (pre-resolve, validate IP, pin TCP connection)</li>
+              <li>Redirect chain validation (up to 3 hops)</li>
               <li>HTTPS enforcement across all redirects</li>
             </ul>
             <h3 className={styles.h3}>What is not checked</h3>
             <ul className={styles.ul}>
               <li>
-                Tools are never invoked — no tool arguments are constructed or
-                sent
+                Tools are not invoked. No tool arguments are constructed or
+                sent.
               </li>
               <li>
-                Authenticated endpoints are not validated — no credentials are
-                accepted
+                Authenticated endpoints are not validated. No credentials are
+                accepted.
               </li>
               <li>Runtime correctness of tool responses</li>
               <li>Server authorization policies or access controls</li>
@@ -155,10 +153,9 @@ export default function DocsPage() {
                 <span className={`${styles.badge} ${styles.pass}`}>PASS</span>
               </dt>
               <dd>
-                All checks performed by MCP Release completed without a
-                blocking or incomplete condition. A PASS does not guarantee
-                universal security or correctness — it means the checks MCP
-                Release ran all passed.
+                All checks completed without a blocking or incomplete
+                condition. A PASS does not guarantee universal security or
+                correctness. It means the checks MCP Release ran all passed.
               </dd>
               <dt>
                 <span className={`${styles.badge} ${styles.warn}`}>
@@ -193,7 +190,7 @@ export default function DocsPage() {
             </p>
             <p>
               This is expected for servers that require authentication. It is
-              not a failure of the server — it is a limitation of MCP Release:
+              not a failure of the server. It is a limitation of MCP Release:
               no credentials are accepted or stored, so authenticated checks
               cannot be performed.
             </p>
@@ -213,38 +210,38 @@ export default function DocsPage() {
               <li>
                 Tools are discovered via{" "}
                 <code className={styles.code}>tools/list</code> but never
-                invoked — no arguments are constructed or sent
+                invoked. No arguments are constructed or sent.
               </li>
               <li>
-                Only public HTTPS endpoints are accepted — HTTP is rejected
-                before any network connection is made
+                Only public HTTPS endpoints are accepted. HTTP is rejected
+                before any connection.
               </li>
               <li>
                 Private, loopback, link-local (169.254.0.0/16), and
                 cloud-metadata (169.254.169.254) destinations are blocked at
-                the DNS level
+                the DNS level.
               </li>
               <li>
-                DNS pinning closes the TOCTOU gap — the resolved IP is pinned
-                at connection time
+                DNS pinning closes the TOCTOU gap. The resolved IP is pinned
+                at connection time.
               </li>
               <li>
-                Redirects are re-validated at each hop — HTTPS enforcement
-                applies across all redirects
+                Redirects are re-validated at each hop. HTTPS applies across
+                all redirects.
               </li>
               <li>
-                Remote response bodies are never included in findings
+                Remote response bodies are never included in findings.
               </li>
               <li>
-                No endpoint credentials are accepted, forwarded, or stored
+                No endpoint credentials are accepted, forwarded, or stored.
               </li>
               <li>
                 TLS verification is enforced (
-                <code className={styles.code}>rejectUnauthorized: true</code>)
+                <code className={styles.code}>rejectUnauthorized: true</code>).
               </li>
               <li>
-                Error messages are redacted before being returned — token
-                patterns and embedded URL credentials are stripped
+                Error messages are redacted before being returned. Token
+                patterns and embedded URL credentials are stripped.
               </li>
             </ul>
           </section>
@@ -260,12 +257,12 @@ export default function DocsPage() {
             </p>
             <ul className={styles.ul}>
               <li>
-                <strong>JSON</strong> — machine-readable, suitable for CI
-                pipelines and automated tooling
+                <strong>JSON</strong>: machine-readable, for CI pipelines and
+                automated tooling
               </li>
               <li>
-                <strong>Markdown</strong> — human-readable, suitable for pull
-                request summaries and release notes
+                <strong>Markdown</strong>: human-readable, for pull request
+                summaries and release notes
               </li>
             </ul>
             <p>
@@ -290,29 +287,29 @@ export default function DocsPage() {
             </h2>
             <ul className={styles.ul}>
               <li>
-                <strong>Public HTTPS endpoints only</strong> — no HTTP, no
-                private network endpoints
+                <strong>Public HTTPS endpoints only.</strong> HTTP and private
+                network endpoints are rejected.
               </li>
               <li>
-                <strong>No credential input</strong> — authenticated checks
-                are not performed
+                <strong>No credential input.</strong> Authenticated checks are
+                not performed.
               </li>
               <li>
-                <strong>Tools are not invoked</strong> — runtime correctness
-                of tool responses is not validated
+                <strong>Tools are not invoked.</strong> Runtime correctness of
+                tool responses is not validated.
               </li>
               <li>
-                <strong>A PASS is not a security guarantee</strong> — it
-                reflects MCP Release&apos;s performed checks only; network and
-                runtime behavior may differ in other environments
+                <strong>A PASS is not a security guarantee.</strong> It
+                reflects the checks MCP Release ran. Runtime behavior may
+                differ in other environments.
               </li>
               <li>
-                <strong>In-memory rate limiting</strong> — per-process only;
-                not shared across scaled instances
+                <strong>In-memory rate limiting.</strong> Per-process only,
+                not shared across scaled instances.
               </li>
               <li>
-                <strong>No persistent storage</strong> — reports are not saved
-                server-side; export before closing the tab
+                <strong>No persistent storage.</strong> Reports are not saved
+                server-side. Export before closing the tab.
               </li>
             </ul>
           </section>
@@ -384,7 +381,7 @@ pnpm lint`}</code>
   with:
     endpoint: https://your-mcp-server.example.com/mcp
     fail-on: fail        # optional: fail (default) | warning
-    timeout-ms: 10000    # optional: 1000–30000`}</code>
+    timeout-ms: 10000    # optional: 1000-30000`}</code>
             </pre>
             <p>
               The action annotates the job with findings and writes a summary

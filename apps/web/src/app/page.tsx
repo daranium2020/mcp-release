@@ -12,11 +12,11 @@ export default function HomePage() {
         {/* Hero */}
         <section className={styles.hero} aria-labelledby="headline">
           <h1 id="headline" className={styles.headline}>
-            Validate an MCP server before you ship it.
+            Check an MCP server before release.
           </h1>
           <p className={styles.subhead}>
-            Check protocol behavior, tool schemas, transport safety, and
-            release readiness without executing tools.
+            Verify the protocol handshake, tool schemas, and network
+            behavior. MCP Release does not execute tools.
           </p>
           <a href="/docs" className={styles.docsLink}>
             View documentation
@@ -55,11 +55,11 @@ export default function HomePage() {
               </span>
               <div className={styles.stepContent}>
                 <span className={styles.stepTitle}>
-                  Non-destructive validation runs
+                  Validation runs
                 </span>
                 <span className={styles.stepDesc}>
                   MCP Release connects, negotiates the protocol, and
-                  lists tools. Tools are discovered but never invoked.
+                  lists tools. Tools are never invoked.
                 </span>
               </div>
             </li>
@@ -72,9 +72,8 @@ export default function HomePage() {
                   Review or export the findings
                 </span>
                 <span className={styles.stepDesc}>
-                  Read the structured report in the browser, or
-                  download it as JSON or Markdown for your release
-                  process.
+                  Read the report in the browser, or download it as
+                  JSON or Markdown.
                 </span>
               </div>
             </li>
@@ -113,11 +112,10 @@ export default function HomePage() {
             </li>
             <li className={styles.checksItem}>
               <span className={styles.checksTitle}>
-                Release readiness
+                Reports
               </span>
               <span className={styles.checksDesc}>
-                Structured findings exportable as JSON or Markdown for
-                CI and release workflows
+                Findings exportable as JSON or Markdown
               </span>
             </li>
           </ul>
@@ -140,13 +138,13 @@ export default function HomePage() {
               </span>
               <div className={styles.resultContent}>
                 <span className={styles.resultTitle}>
-                  All performed checks passed
+                  All checks passed
                 </span>
                 <span className={styles.resultDesc}>
                   The endpoint responded correctly and all validated
                   properties met requirements. A PASS reflects the
-                  checks MCP Release performed — not a guarantee of
-                  universal correctness.
+                  checks MCP Release ran. It is not a guarantee of
+                  correctness.
                 </span>
               </div>
             </li>
@@ -158,15 +156,15 @@ export default function HomePage() {
               </span>
               <div className={styles.resultContent}>
                 <span className={styles.resultTitle}>
-                  Validation was incomplete or requires attention
+                  Some checks did not complete
                 </span>
                 <span className={styles.resultDesc}>
-                  Some checks could not be completed or found a
+                  One or more checks could not complete or found a
                   non-blocking issue. If your server requires
                   authorization, MCP Release returns{" "}
                   <code className={styles.inlineCode}>AUTH_REQUIRED</code>{" "}
-                  as a warning — authenticated checks are not performed
-                  because no credentials are accepted or stored.
+                  as a warning. Authenticated checks are not performed.
+                  No credentials are accepted or stored.
                 </span>
               </div>
             </li>
@@ -181,10 +179,9 @@ export default function HomePage() {
                   One or more blocking findings
                 </span>
                 <span className={styles.resultDesc}>
-                  At least one check found a condition that should be
-                  resolved before shipping — such as an invalid tool
-                  name, a missing required schema field, or a transport
-                  error.
+                  At least one check found a blocking condition. Examples:
+                  an invalid tool name, a missing required schema field,
+                  or a transport error.
                 </span>
               </div>
             </li>
@@ -203,11 +200,11 @@ export default function HomePage() {
             <li>
               Tools are discovered via{" "}
               <code className={styles.inlineCode}>tools/list</code> but
-              never invoked — no arguments are constructed or sent
+              never invoked. No arguments are constructed or sent.
             </li>
             <li>
-              Only public HTTPS endpoints are accepted — HTTP is
-              rejected before any network connection is made
+              Only public HTTPS endpoints are accepted. HTTP is
+              rejected before any connection.
             </li>
             <li>
               Private, loopback, link-local, and cloud-metadata
@@ -237,9 +234,8 @@ export default function HomePage() {
             Try the demo endpoint
           </h2>
           <p className={styles.demoDesc}>
-            A public MCP fixture server is available for testing. It
-            returns deterministic results with no external dependencies
-            or side effects.
+            A public fixture server is available for testing. It returns
+            fixed results with no external dependencies.
           </p>
           <code className={styles.demoUrl}>{DEMO_ENDPOINT}</code>
           <p className={styles.demoNote}>

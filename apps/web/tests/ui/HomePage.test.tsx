@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import HomePage from "../../src/app/page.js";
 
-// Mock CheckClient — its own behavior is tested in CheckClient.test.tsx.
+// Mock CheckClient. Its own behavior is tested in CheckClient.test.tsx.
 // We capture the demoEndpoint prop to verify the page passes it correctly.
 let capturedDemoEndpoint: string | undefined;
 vi.mock("../../src/components/CheckClient.js", () => ({
@@ -31,13 +31,13 @@ describe("HomePage", () => {
     render(<HomePage />);
     expect(
       screen.getByRole("heading", { level: 1 }).textContent,
-    ).toContain("Validate an MCP server before you ship it");
+    ).toContain("Check an MCP server before release");
   });
 
   it("renders supporting subhead copy", () => {
     render(<HomePage />);
     expect(
-      screen.getByText(/check protocol behavior, tool schemas/i),
+      screen.getByText(/verify the protocol handshake, tool schemas/i),
     ).toBeDefined();
   });
 
@@ -92,14 +92,14 @@ describe("HomePage", () => {
   it("explains PASS result meaning", () => {
     render(<HomePage />);
     expect(
-      screen.getByText(/all performed checks passed/i),
+      screen.getByText(/all checks passed/i),
     ).toBeDefined();
   });
 
   it("explains WARNING result meaning", () => {
     render(<HomePage />);
     expect(
-      screen.getByText(/validation was incomplete or requires attention/i),
+      screen.getByText(/some checks did not complete/i),
     ).toBeDefined();
   });
 
