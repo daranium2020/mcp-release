@@ -3,9 +3,10 @@
   width: 100%;
   max-width: var(--max-width);
   margin: 0 auto;
-  padding: 0 var(--page-pad) 3rem;
+  padding: 0 var(--page-pad) 4rem;
 }
 
+/* ---- Hero ---- */
 .hero {
   padding: 2.25rem 0 1.75rem;
   border-bottom: 1px solid var(--border-subtle);
@@ -26,24 +27,84 @@
   color: var(--text-muted);
   max-width: 600px;
   line-height: 1.65;
+  margin-bottom: 1rem;
 }
 
-/* ---- "What MCP Release checks" section ---- */
-.checks {
+.docsLink {
+  display: inline-block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--blue);
+}
+
+/* ---- Shared section wrapper ---- */
+.section {
   margin-top: 3rem;
   padding-top: 2rem;
   border-top: 1px solid var(--border-subtle);
 }
 
-.checksHeading {
+/* ---- Shared section heading (small-caps label style) ---- */
+.sectionHeading {
   font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--text-muted);
-  margin-bottom: 1.125rem;
+  margin-bottom: 1.25rem;
 }
 
+/* ---- "How it works" steps ---- */
+.stepsList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-width: 560px;
+}
+
+.step {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.stepNum {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-top: 0.1rem;
+}
+
+.stepContent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.stepTitle {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.stepDesc {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+/* ---- "What MCP Release checks" blocks ---- */
 .checksList {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -70,6 +131,137 @@
   line-height: 1.5;
 }
 
+/* ---- Result meanings ---- */
+.resultsList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-width: 640px;
+}
+
+.resultItem {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.resultBadge {
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  margin-top: 0.15rem;
+  font-family: var(--font-mono);
+}
+
+.badgePass {
+  color: var(--pass);
+  background: var(--pass-bg);
+  border: 1px solid var(--pass-border);
+}
+
+.badgeWarn {
+  color: var(--warn);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+}
+
+.badgeFail {
+  color: var(--fail);
+  background: var(--fail-bg);
+  border: 1px solid var(--fail-border);
+}
+
+.resultContent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.resultTitle {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.resultDesc {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  line-height: 1.65;
+}
+
+.inlineCode {
+  font-family: var(--font-mono);
+  font-size: 0.8125em;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+  color: var(--text);
+}
+
+/* ---- Security model ---- */
+.securityList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  max-width: 600px;
+}
+
+.securityList li {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  padding-left: 1rem;
+  position: relative;
+}
+
+.securityList li::before {
+  content: "–";
+  position: absolute;
+  left: 0;
+  color: var(--text-dim);
+}
+
+/* ---- Demo section ---- */
+.demoDesc {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin-bottom: 0.75rem;
+  max-width: 560px;
+}
+
+.demoUrl {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  color: var(--text);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.875rem;
+  word-break: break-all;
+  margin-bottom: 0.75rem;
+}
+
+.demoNote {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  max-width: 520px;
+}
+
+.demoStrong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ---- Mobile adjustments ---- */
 @media (max-width: 640px) {
   .hero {
     padding: 1.5rem 0 1.25rem;
@@ -78,5 +270,26 @@
   .checksList {
     grid-template-columns: 1fr;
     gap: 0.875rem;
+  }
+
+  .resultItem {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .stepsList {
+    max-width: 100%;
+  }
+
+  .resultsList {
+    max-width: 100%;
+  }
+
+  .securityList {
+    max-width: 100%;
+  }
+
+  .demoUrl {
+    width: 100%;
   }
 }

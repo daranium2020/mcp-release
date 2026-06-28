@@ -1,38 +1,31 @@
 # MCP Release
 
-Release validation and CI platform for production Model Context Protocol servers.
+Validate an MCP server before you ship it. MCP Release performs a non-destructive protocol handshake, discovers tools, validates their schemas, and checks network safety — without ever executing a tool or accepting credentials.
 
-## Workspace
+**Web app:** https://mcprelease.dev
+**Demo endpoint:** https://mcp-release-fixture.vercel.app/mcp
+**Repository:** https://github.com/daranium2020/mcp-release
 
-| Package | Purpose |
-|---|---|
-| `packages/core` | Validation engine — SSRF guard, DNS pinning, transport adapter, validator, report model |
-| `packages/cli` | Command-line interface |
-| `packages/reporter` | JSON, Markdown, and terminal report formatters |
-| `packages/github-action` | GitHub Action (`action.yml`) wrapping the core validator |
-| `apps/web` | Next.js web interface for browser-based release validation |
-| `fixtures/servers` | Localhost fixture MCP servers used in tests |
+---
 
-## Commands
+## Quick start
 
-```bash
-pnpm install                  # install all workspace dependencies
-pnpm typecheck                # TypeScript type check (all packages + web)
-pnpm lint                     # ESLint across the workspace
-pnpm build                    # build all packages including the web app
-pnpm test                     # run all tests (14 files, 172 tests)
-```
+### Browser
 
-### Web app development
+1. Open https://mcprelease.dev
+2. Enter a public HTTPS MCP endpoint URL and click **Run Release Check**
+3. Review the structured findings report — export as JSON or Markdown if needed
+
+To try without a real server, use the **Try demo endpoint** button or paste `https://mcp-release-fixture.vercel.app/mcp` directly.
+
+> Authenticated endpoints are not supported. MCP Release connects as an unauthenticated client only.
+
+### CLI
 
 ```bash
-cd apps/web
-pnpm dev                      # start Next.js dev server on http://localhost:3000
-```
+# Build first
+pnpm build
 
-### CLI usage
-
-```bash
 node packages/cli/dist/index.js check https://your-mcp-server.example.com/mcp
 node packages/cli/dist/index.js check https://example.com/mcp --output json
 node packages/cli/dist/index.js check https://example.com/mcp --timeout 5000
@@ -41,135 +34,69 @@ node packages/cli/dist/index.js check https://example.com/mcp --fail-on WARNING
 
 **Exit codes:** `0` = below threshold, `1` = threshold met or exceeded, `2` = fatal error.
 
----
+### GitHub Action
 
-## Milestone 3 — Web MVP
-
-`apps/web` is a Next.js 15 (App Router) web interface that lets users enter an HTTPS MCP endpoint and receive a formatted release-validation report in the browser.
-
-### Interface
-
-The landing page shows a headline, supporting text, and an endpoint input. After submission, the results area displays:
-
-- Overall PASS / WARNING / FAIL status with severity color coding
-- Endpoint hostname (credentials and sensitive query parameters are never shown)
-- Protocol version, server name, connection duration, redirect count
-- Findings grouped by severity (FAIL → WARNING → PASS)
-- Discovered tools with per-tool findings
-- Export actions: Copy JSON, Download JSON, Download Markdown
-- "Run another check" to reset the form
-
-### Architecture
-
-```
-apps/web/src/
-├── app/
-│   ├── layout.tsx              Server component — HTML shell, metadata
-│   ├── page.tsx                Server component — hero section + CheckClient
-│   └── api/check/
-│       ├── handler.ts          Testable request handler (pure function)
-│       └── route.ts            Next.js route entry point
-├── components/
-│   ├── Header.tsx / .module.css
-│   ├── Footer.tsx / .module.css
-│   ├── CheckClient.tsx / .module.css   Client component — form + state
-│   └── Results.tsx / .module.css       Report display
-└── lib/
-    ├── constants.ts            Public configuration
-    ├── rate-limit.ts           In-memory sliding-window rate limiter
-    └── concurrency.ts          In-memory concurrency guard
+```yaml
+- uses: daranium2020/mcp-release@main
+  with:
+    endpoint: https://your-mcp-server.example.com/mcp
+    fail-on: fail          # optional: fail (default) | warning
+    timeout-ms: 10000      # optional: 1000–30000
+    format: markdown       # optional: json | markdown | both
 ```
 
-### API contract
+**Outputs:** `status`, `pass-count`, `warning-count`, `fail-count`, `report-json`, `report-markdown`
 
-`POST /api/check` accepts `application/json`:
-
-```json
-{ "endpoint": "https://example.com/mcp", "timeoutMs": 10000 }
-```
-
-- `endpoint` — required, HTTPS only, no embedded credentials
-- `timeoutMs` — optional, 1000–30000ms (default 10000)
-- Unexpected fields are rejected with `400 UNEXPECTED_FIELD`
-
-Returns `200 { "report": CheckReport }` or a JSON error body with `error` and `message` fields.
-
-### Security model
-
-- HTTPS required for all endpoints — HTTP is rejected with `400 HTTPS_REQUIRED`
-- Embedded credentials rejected at the API layer (before core validation)
-- No user-supplied headers, cookies, or Authorization values are forwarded
-- All network requests go through `packages/core` which enforces DNS pinning, SSRF blocking, redirect validation, and TLS verification (`rejectUnauthorized: true`, never false)
-- Error messages are passed through `redactErrorMessage` + URL credential stripping before being returned
-- No stack traces are ever included in API responses
-- Security headers on all responses: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Cache-Control: no-store`
-- No CORS headers — same-origin only
-- Body size capped at 4 KB
-
-### Abuse controls (in-memory, MVP only)
-
-- **Rate limit**: 10 requests per IP per minute (sliding window)
-- **Concurrency**: max 5 simultaneous outbound checks
-- Both controls are per-process and reset on restart
-
-> **Production limitation**: in-memory rate limiting and concurrency guards are not shared across horizontally-scaled instances. Replace with a shared store (Redis, Upstash, etc.) before running multiple replicas.
-
-### Tools are never invoked
-
-The web app calls `runCheck()` from `packages/core` with `allowHttp: false`. The core validator connects to the MCP server, performs initialization, and calls `tools/list` — but **never calls any tool**. No tool arguments are constructed or sent. No side effects are triggered on the remote server.
-
-### Current limitations
-
-- Not yet publicly deployed (Milestone 3 is a local production-shaped MVP)
-- No authentication, billing, rate limiting shared across instances, or persistent storage
-- In-memory rate limiting is per-process only
-- No horizontal scaling support without a shared rate-limit store
-- x-forwarded-for IP is used for rate limiting without proxy verification (can be spoofed without a trusted proxy layer)
+The action annotates the workflow job with findings and writes a summary to the GitHub Actions job summary.
 
 ---
 
-## Milestone 2 — Security hardening and GitHub Action
+## What is checked
 
-- DNS pinning via undici `Agent` with custom connector — closes TOCTOU gap
-- Protocol downgrade detection (HTTPS → HTTP redirect blocked)
-- IPv4-mapped hex address blocking
-- Redirect loop detection (per-chain visited set)
-- Embedded credential detection in endpoint URLs
-- GitHub Action (`packages/github-action/action.yml`) with inputs, outputs, annotations, and job summary
-- CI workflow (`.github/workflows/ci.yml`) with SHA-pinned third-party actions
+| Area | Details |
+|---|---|
+| **Protocol** | MCP initialization handshake, protocol version negotiation, transport response codes |
+| **Tool schemas** | Tool names (non-empty, valid characters), descriptions, `inputSchema` (valid JSON Schema, Ajv-compilable), `outputSchema` (if present), duplicate names |
+| **Network safety** | SSRF protection, DNS pinning, redirect chain validation (up to 3 hops), HTTPS enforcement across all redirects |
+| **Release readiness** | Structured findings exportable as JSON or Markdown |
 
-## Milestone 1 — Remote MCP Release Checker
+**What is not checked:** tools are never invoked, authenticated endpoints are not validated, runtime correctness of tool responses is not assessed.
 
-Validates protocol behavior, tool names, descriptions, and schemas for a remote MCP server without ever invoking tools.
+---
 
-### What is validated
+## Result meanings
 
-- MCP initialization handshake
-- `tools/list` response
-- Tool names (non-empty, valid characters)
-- Tool descriptions (present, non-empty)
-- `inputSchema` — valid JSON Schema, compilable by Ajv, supported draft
-- `outputSchema` — validated if present
-- Duplicate tool names
-- Connection latency, transport errors
+| Result | Meaning |
+|---|---|
+| **PASS** | All checks performed by MCP Release completed without a blocking or incomplete condition. A PASS does not guarantee universal security or correctness — it reflects the checks MCP Release ran. |
+| **WARNING** | One or more checks could not be completed or found a non-blocking issue. If the server returns `401`, MCP Release records `AUTH_REQUIRED` as a WARNING and stops — no credentials are accepted or stored. |
+| **FAIL** | One or more checks found a blocking condition. The server should be reviewed before production. |
 
-### Security — SSRF protection
+---
 
-All URLs are validated before any network connection:
+## Security model
 
-- HTTPS required in production
-- Blocked: RFC 1918 private ranges, loopback, link-local, cloud metadata (169.254.169.254), carrier-grade NAT, multicast, NAT64, documentation ranges, discard prefix
-- DNS pinning: pre-resolve → validate IP → connector routes TCP/TLS to the pinned IP
-- Redirects re-validated at each hop (max 3)
-- Secrets and sensitive headers redacted from all outputs
+- Tools are discovered via `tools/list` but **never invoked** — no arguments are constructed or sent
+- Only public **HTTPS** endpoints are accepted — HTTP is rejected before any network connection
+- Private, loopback, link-local (`169.254.0.0/16`), and cloud-metadata (`169.254.169.254`) destinations are **blocked at the DNS level**
+- **DNS pinning** closes the TOCTOU gap — the resolved IP is pinned at connection time
+- Redirects are re-validated at each hop — HTTPS enforcement applies across all redirects
+- Remote response bodies are never included in findings
+- **No credentials** are accepted, forwarded, or stored
+- TLS verification is enforced (`rejectUnauthorized: true`)
+- Error messages are redacted — token patterns and embedded URL credentials are stripped before being returned
 
-### Report format
+---
+
+## Report formats
+
+### JSON (`schemaVersion: "1"`)
 
 ```jsonc
 {
   "schemaVersion": "1",
   "serverUrl": "https://example.com/mcp",
-  "checkedAt": "2026-06-27T00:00:00.000Z",
+  "checkedAt": "2026-06-28T00:00:00.000Z",
   "durationMs": 234,
   "overallStatus": "PASS",
   "transport": { "httpStatus": 200, "durationMs": 120, "redirectCount": 0 },
@@ -183,3 +110,138 @@ All URLs are validated before any network connection:
   ]
 }
 ```
+
+### Markdown
+
+Human-readable summary suitable for pull request descriptions and release notes. Generated by `packages/reporter`.
+
+### Browser UI
+
+After a check completes, the results area displays overall status, findings grouped by severity, discovered tools, and export buttons (Copy JSON, Download JSON, Download Markdown).
+
+---
+
+## Workspace
+
+| Package / App | Purpose |
+|---|---|
+| `packages/core` | Validation engine — SSRF guard, DNS pinning, transport adapter, MCP validator, report model |
+| `packages/cli` | Command-line interface |
+| `packages/reporter` | JSON, Markdown, and terminal report formatters |
+| `packages/github-action` | GitHub Action (`action.yml`) wrapping the core validator |
+| `apps/web` | Next.js 15 web interface — https://mcprelease.dev |
+| `apps/public-mcp-fixture` | Deterministic public MCP fixture server — https://mcp-release-fixture.vercel.app/mcp |
+| `fixtures/servers` | Localhost fixture MCP servers used in tests |
+
+---
+
+## Deployment
+
+Two independent Vercel projects:
+
+| Project | Root directory | URL |
+|---|---|---|
+| `mcp-release` | `apps/web` | https://mcprelease.dev |
+| `mcp-release-fixture` | `apps/public-mcp-fixture` | https://mcp-release-fixture.vercel.app |
+
+Both have automatic git deployments disabled (`"git": { "deploymentEnabled": false }` in their respective `vercel.json`). Deployments are triggered manually.
+
+`apps/web` depends on `packages/core` and `packages/reporter` — its build command builds those packages first:
+
+```
+pnpm --filter @mcp-release/core build && pnpm --filter @mcp-release/reporter build && pnpm --filter @mcp-release/web build
+```
+
+`apps/public-mcp-fixture` has no sibling package dependencies and builds with `next build` directly.
+
+---
+
+## Local development
+
+**Requirements:** Node.js ≥ 22.13.0, pnpm ≥ 10.28.0
+
+```bash
+pnpm install                  # install all workspace dependencies
+pnpm typecheck                # TypeScript type check (all packages + apps)
+pnpm lint                     # ESLint across the workspace
+pnpm build                    # build all packages and apps
+pnpm test                     # run all tests (22 files, 398 tests)
+```
+
+### Start the web app
+
+```bash
+pnpm --filter @mcp-release/web dev
+# → http://localhost:3000
+```
+
+The development server shows fixture buttons (PASS / WARNING / FAIL) that load sample reports without making network requests. These buttons are removed in production builds.
+
+### Web app structure
+
+```
+apps/web/src/
+├── app/
+│   ├── layout.tsx              HTML shell, metadata, OG tags
+│   ├── page.tsx                Landing page — hero, checks, results, security, demo
+│   ├── docs/
+│   │   └── page.tsx            Documentation page
+│   └── api/check/
+│       ├── handler.ts          Testable request handler
+│       └── route.ts            Next.js route entry point
+├── components/
+│   ├── Header.tsx / .module.css
+│   ├── Footer.tsx / .module.css
+│   ├── CheckClient.tsx / .module.css   Client component — form + state
+│   └── Results.tsx / .module.css       Report display
+└── lib/
+    ├── constants.ts            SITE_URL, GITHUB_URL, DEMO_ENDPOINT, timeout bounds
+    ├── rate-limit.ts           In-memory sliding-window rate limiter
+    └── concurrency.ts          In-memory concurrency guard
+```
+
+### API contract
+
+`POST /api/check` — `application/json`:
+
+```json
+{ "endpoint": "https://example.com/mcp", "timeoutMs": 10000 }
+```
+
+- `endpoint` — required, HTTPS only, no embedded credentials
+- `timeoutMs` — optional, 1000–30000 ms (default 10000)
+- Unexpected fields are rejected with `400 UNEXPECTED_FIELD`
+
+Returns `200 { "report": CheckReport }` or a JSON error body with `error` and `message`.
+
+### Abuse controls (in-memory)
+
+- **Rate limit:** 10 requests per IP per minute (sliding window)
+- **Concurrency:** max 5 simultaneous outbound checks
+
+Both controls are per-process. See Known Limitations below.
+
+---
+
+## Known limitations
+
+- **Public HTTPS endpoints only** — HTTP and private network endpoints are rejected
+- **No credential input** — authenticated checks are not performed; servers requiring authorization return `AUTH_REQUIRED` (WARNING)
+- **Tools are not invoked** — runtime correctness of tool responses is not validated
+- **A PASS is not a security guarantee** — it reflects MCP Release's performed checks; network and runtime behavior may differ in other environments
+- **In-memory rate limiting** — per-process only; not shared across horizontally-scaled instances
+- **Reports are not stored server-side** — export before closing the tab
+- **x-forwarded-for** is used for rate limiting; accurate behind a trusted proxy, not verified otherwise
+
+---
+
+## Contributing
+
+```bash
+pnpm install
+pnpm typecheck && pnpm lint && pnpm test
+```
+
+All PRs run the full suite via `.github/workflows/ci.yml`. The workflow uses SHA-pinned actions and pnpm 10.28.0.
+
+Core validation behavior (transport, SSRF, DNS pinning, error classification, report format) is covered by tests in `packages/core/tests/`. Web UI behavior is covered by tests in `apps/web/tests/`.

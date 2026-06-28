@@ -6,10 +6,15 @@ export default function Header() {
     <header className={styles.header}>
       <div className={styles.inner}>
         <div className={styles.brand}>
-          <span className={styles.wordmark}>{SITE_NAME}</span>
+          <a href="/" className={styles.wordmark}>
+            {SITE_NAME}
+          </a>
           <span className={styles.descriptor}>{SITE_DESCRIPTION}</span>
         </div>
         <nav className={styles.nav} aria-label="Site navigation">
+          <a href="/docs" className={styles.navLink}>
+            Docs
+          </a>
           <a
             href={GITHUB_URL}
             className={styles.ghLink}

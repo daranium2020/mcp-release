@@ -28,3 +28,14 @@
   font-size: 0.8125rem;
   color: var(--text-dim);
 }
+
+.link {
+  font-size: 0.8125rem;
+  color: var(--text-dim);
+  transition: color 0.15s;
+}
+
+.link:hover {
+  color: var(--text-muted);
+  text-decoration: none;
+}
