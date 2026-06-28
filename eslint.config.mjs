@@ -2,6 +2,7 @@ import js from "@eslint/js";
 import tsPlugin from "@typescript-eslint/eslint-plugin";
 import tsParser from "@typescript-eslint/parser";
 import globals from "globals";
+import nextPlugin from "@next/eslint-plugin-next";
 
 export default [
   js.configs.recommended,
@@ -33,6 +34,27 @@ export default [
       "no-redeclare": "off",
       // TypeScript handles undef; the @types/node package declares globals
       "no-undef": "off",
+    },
+  },
+  // Register the @next/next plugin globally (no files filter) so Next.js build's
+  // plugin-detection passes: it calls calculateConfigForFile on the config file
+  // itself, which only sees plugins registered without a files constraint.
+  {
+    plugins: {
+      "@next/next": nextPlugin,
+    },
+  },
+  // Apply Next.js recommended rules scoped to the two Next.js app directories.
+  {
+    files: [
+      "apps/web/**/*.{ts,tsx,js,jsx}",
+      "apps/public-mcp-fixture/**/*.{ts,tsx,js,jsx}",
+    ],
+    rules: {
+      ...nextPlugin.configs.recommended.rules,
+      // Both apps use App Router — no pages/ directory exists. Next.js itself
+      // conditionally omits this Pages Router rule when pagesDir is absent.
+      "@next/next/no-html-link-for-pages": "off",
     },
   },
   {
