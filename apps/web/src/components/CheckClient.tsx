@@ -288,7 +288,7 @@ export default function CheckClient({ demoEndpoint }: CheckClientProps = {}) {
         <ul className={styles.trustList} aria-label="Validation guarantees">
           <li className={styles.trustItem}>MCP tools are never executed</li>
           <li className={styles.trustItem}>No credentials are stored</li>
-          <li className={styles.trustItem}>Reports are deterministic and exportable</li>
+          <li className={styles.trustItem}>Reports are exportable as JSON or Markdown</li>
         </ul>
         {demoEndpoint && phase.kind === "idle" && (
           <p className={styles.demoHint}>
@@ -307,7 +307,7 @@ export default function CheckClient({ demoEndpoint }: CheckClientProps = {}) {
         )}
       </form>
 
-      {/* Development-only fixture panel — not rendered in production builds */}
+      {/* Development-only fixture panel (not rendered in production builds) */}
       {DEV_MODE && (
         <div className={styles.devPanel}>
           <span className={styles.devLabel}>Dev fixtures</span>

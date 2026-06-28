@@ -20,7 +20,7 @@ export default function Footer() {
           GitHub
         </a>
         <span className={styles.sep} aria-hidden="true">·</span>
-        <span className={styles.note}>Built for safer MCP releases</span>
+        <span className={styles.note}>MCP server validation</span>
       </div>
     </footer>
   );

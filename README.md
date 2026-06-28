@@ -1,6 +1,6 @@
 # MCP Release
 
-Validate an MCP server before you ship it. MCP Release performs a non-destructive protocol handshake, discovers tools, validates their schemas, and checks network safety — without ever executing a tool or accepting credentials.
+MCP Release checks a remote MCP server. It verifies the protocol handshake, discovers tools, validates their schemas, and checks network configuration. It does not execute tools or accept credentials.
 
 **Web app:** https://mcprelease.dev
 **Demo endpoint:** https://mcp-release-fixture.vercel.app/mcp
@@ -14,7 +14,7 @@ Validate an MCP server before you ship it. MCP Release performs a non-destructiv
 
 1. Open https://mcprelease.dev
 2. Enter a public HTTPS MCP endpoint URL and click **Run Release Check**
-3. Review the structured findings report — export as JSON or Markdown if needed
+3. Review the report. Download it as JSON or Markdown if needed.
 
 To try without a real server, use the **Try demo endpoint** button or paste `https://mcp-release-fixture.vercel.app/mcp` directly.
 
@@ -41,7 +41,7 @@ node packages/cli/dist/index.js check https://example.com/mcp --fail-on WARNING
   with:
     endpoint: https://your-mcp-server.example.com/mcp
     fail-on: fail          # optional: fail (default) | warning
-    timeout-ms: 10000      # optional: 1000–30000
+    timeout-ms: 10000      # optional: 1000-30000
     format: markdown       # optional: json | markdown | both
 ```
 
@@ -58,7 +58,7 @@ The action annotates the workflow job with findings and writes a summary to the 
 | **Protocol** | MCP initialization handshake, protocol version negotiation, transport response codes |
 | **Tool schemas** | Tool names (non-empty, valid characters), descriptions, `inputSchema` (valid JSON Schema, Ajv-compilable), `outputSchema` (if present), duplicate names |
 | **Network safety** | SSRF protection, DNS pinning, redirect chain validation (up to 3 hops), HTTPS enforcement across all redirects |
-| **Release readiness** | Structured findings exportable as JSON or Markdown |
+| **Reports** | Findings exportable as JSON or Markdown |
 
 **What is not checked:** tools are never invoked, authenticated endpoints are not validated, runtime correctness of tool responses is not assessed.
 
@@ -68,23 +68,23 @@ The action annotates the workflow job with findings and writes a summary to the 
 
 | Result | Meaning |
 |---|---|
-| **PASS** | All checks performed by MCP Release completed without a blocking or incomplete condition. A PASS does not guarantee universal security or correctness — it reflects the checks MCP Release ran. |
-| **WARNING** | One or more checks could not be completed or found a non-blocking issue. If the server returns `401`, MCP Release records `AUTH_REQUIRED` as a WARNING and stops — no credentials are accepted or stored. |
-| **FAIL** | One or more checks found a blocking condition. The server should be reviewed before production. |
+| **PASS** | All checks completed without a blocking or incomplete condition. A PASS does not guarantee universal security or correctness. It reflects the checks MCP Release ran. |
+| **WARNING** | One or more checks could not complete or found a non-blocking issue. If the server returns `401`, MCP Release records `AUTH_REQUIRED` as a WARNING and stops. No credentials are accepted or stored. |
+| **FAIL** | One or more checks found a blocking condition. Review the server before shipping. |
 
 ---
 
 ## Security model
 
-- Tools are discovered via `tools/list` but **never invoked** — no arguments are constructed or sent
-- Only public **HTTPS** endpoints are accepted — HTTP is rejected before any network connection
-- Private, loopback, link-local (`169.254.0.0/16`), and cloud-metadata (`169.254.169.254`) destinations are **blocked at the DNS level**
-- **DNS pinning** closes the TOCTOU gap — the resolved IP is pinned at connection time
-- Redirects are re-validated at each hop — HTTPS enforcement applies across all redirects
-- Remote response bodies are never included in findings
-- **No credentials** are accepted, forwarded, or stored
-- TLS verification is enforced (`rejectUnauthorized: true`)
-- Error messages are redacted — token patterns and embedded URL credentials are stripped before being returned
+- Tools are discovered via `tools/list` but **never invoked**. No arguments are constructed or sent.
+- Only public **HTTPS** endpoints are accepted. HTTP is rejected before any connection.
+- Private, loopback, link-local (`169.254.0.0/16`), and cloud-metadata (`169.254.169.254`) destinations are **blocked at the DNS level**.
+- **DNS pinning** closes the TOCTOU gap. The resolved IP is pinned at connection time.
+- Redirects are re-validated at each hop. HTTPS applies across all redirects.
+- Remote response bodies are never included in findings.
+- **No credentials** are accepted, forwarded, or stored.
+- TLS verification is enforced (`rejectUnauthorized: true`).
+- Error messages are redacted. Token patterns and embedded URL credentials are stripped before being returned.
 
 ---
 
@@ -125,12 +125,12 @@ After a check completes, the results area displays overall status, findings grou
 
 | Package / App | Purpose |
 |---|---|
-| `packages/core` | Validation engine — SSRF guard, DNS pinning, transport adapter, MCP validator, report model |
+| `packages/core` | Validation engine: SSRF guard, DNS pinning, transport adapter, MCP validator, report model |
 | `packages/cli` | Command-line interface |
 | `packages/reporter` | JSON, Markdown, and terminal report formatters |
 | `packages/github-action` | GitHub Action (`action.yml`) wrapping the core validator |
-| `apps/web` | Next.js 15 web interface — https://mcprelease.dev |
-| `apps/public-mcp-fixture` | Deterministic public MCP fixture server — https://mcp-release-fixture.vercel.app/mcp |
+| `apps/web` | Next.js 15 web interface (https://mcprelease.dev) |
+| `apps/public-mcp-fixture` | Public MCP fixture server (https://mcp-release-fixture.vercel.app/mcp) |
 | `fixtures/servers` | Localhost fixture MCP servers used in tests |
 
 ---
@@ -146,7 +146,7 @@ Two independent Vercel projects:
 
 Both have automatic git deployments disabled (`"git": { "deploymentEnabled": false }` in their respective `vercel.json`). Deployments are triggered manually.
 
-`apps/web` depends on `packages/core` and `packages/reporter` — its build command builds those packages first:
+`apps/web` depends on `packages/core` and `packages/reporter`. Its build command builds those packages first:
 
 ```
 pnpm --filter @mcp-release/core build && pnpm --filter @mcp-release/reporter build && pnpm --filter @mcp-release/web build
@@ -183,7 +183,7 @@ The development server shows fixture buttons (PASS / WARNING / FAIL) that load s
 apps/web/src/
 ├── app/
 │   ├── layout.tsx              HTML shell, metadata, OG tags
-│   ├── page.tsx                Landing page — hero, checks, results, security, demo
+│   ├── page.tsx                Landing page
 │   ├── docs/
 │   │   └── page.tsx            Documentation page
 │   └── api/check/
@@ -192,7 +192,7 @@ apps/web/src/
 ├── components/
 │   ├── Header.tsx / .module.css
 │   ├── Footer.tsx / .module.css
-│   ├── CheckClient.tsx / .module.css   Client component — form + state
+│   ├── CheckClient.tsx / .module.css   Client component (form, state)
 │   └── Results.tsx / .module.css       Report display
 └── lib/
     ├── constants.ts            SITE_URL, GITHUB_URL, DEMO_ENDPOINT, timeout bounds
@@ -202,14 +202,14 @@ apps/web/src/
 
 ### API contract
 
-`POST /api/check` — `application/json`:
+`POST /api/check` accepts `application/json`:
 
 ```json
 { "endpoint": "https://example.com/mcp", "timeoutMs": 10000 }
 ```
 
-- `endpoint` — required, HTTPS only, no embedded credentials
-- `timeoutMs` — optional, 1000–30000 ms (default 10000)
+- `endpoint`: required, HTTPS only, no embedded credentials
+- `timeoutMs`: optional, 1000-30000 ms (default 10000)
 - Unexpected fields are rejected with `400 UNEXPECTED_FIELD`
 
 Returns `200 { "report": CheckReport }` or a JSON error body with `error` and `message`.
@@ -225,13 +225,13 @@ Both controls are per-process. See Known Limitations below.
 
 ## Known limitations
 
-- **Public HTTPS endpoints only** — HTTP and private network endpoints are rejected
-- **No credential input** — authenticated checks are not performed; servers requiring authorization return `AUTH_REQUIRED` (WARNING)
-- **Tools are not invoked** — runtime correctness of tool responses is not validated
-- **A PASS is not a security guarantee** — it reflects MCP Release's performed checks; network and runtime behavior may differ in other environments
-- **In-memory rate limiting** — per-process only; not shared across horizontally-scaled instances
-- **Reports are not stored server-side** — export before closing the tab
-- **x-forwarded-for** is used for rate limiting; accurate behind a trusted proxy, not verified otherwise
+- **Public HTTPS endpoints only.** HTTP and private network endpoints are rejected.
+- **No credential input.** Authenticated checks are not performed. Servers requiring authorization return `AUTH_REQUIRED` (WARNING).
+- **Tools are not invoked.** Runtime correctness of tool responses is not validated.
+- **A PASS is not a security guarantee.** It reflects the checks MCP Release ran. Runtime behavior may differ in other environments.
+- **In-memory rate limiting.** Per-process only, not shared across horizontally-scaled instances.
+- **Reports are not stored server-side.** Export before closing the tab.
+- **x-forwarded-for** is used for rate limiting. Accurate behind a trusted proxy, not verified otherwise.
 
 ---
 

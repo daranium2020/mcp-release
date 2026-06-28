@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import DocsPage, { metadata } from "../../src/app/docs/page.js";
 
-describe("DocsPage — content", () => {
+describe("DocsPage: content", () => {
   it("renders the Documentation heading", () => {
     render(<DocsPage />);
     expect(
@@ -78,7 +78,7 @@ describe("DocsPage — content", () => {
 
   it("shows the public fixture demo endpoint URL", () => {
     render(<DocsPage />);
-    // URL appears in the quick-start and demo sections — expect at least one occurrence
+    // URL appears in the quick-start and demo sections. Expect at least one occurrence.
     const matches = screen.getAllByText(
       "https://mcp-release-fixture.vercel.app/mcp",
     );
@@ -129,7 +129,7 @@ describe("DocsPage — content", () => {
   });
 });
 
-describe("DocsPage — metadata", () => {
+describe("DocsPage: metadata", () => {
   it("sets a page title", () => {
     expect(typeof metadata.title === "string" ? metadata.title : "Documentation").toContain(
       "Documentation",

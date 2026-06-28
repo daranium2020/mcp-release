@@ -2,9 +2,9 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { SITE_NAME, SITE_URL } from "../lib/constants";
 
-const TITLE = "MCP Release — Validate MCP servers before production";
+const TITLE = "MCP Release: MCP server validation";
 const DESCRIPTION =
-  "Validate MCP protocol behavior, tool schemas, network safety, and release readiness without executing tools.";
+  "Check MCP protocol handshake, tool schemas, and network configuration. Does not execute tools.";
 
 export const viewport: Viewport = {
   width: "device-width",
