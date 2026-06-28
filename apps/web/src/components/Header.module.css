@@ -50,6 +50,18 @@
   gap: 1rem;
 }
 
+.navLink {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: color 0.15s;
+}
+
+.navLink:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+
 .ghLink {
   font-size: 0.8125rem;
   font-weight: 500;

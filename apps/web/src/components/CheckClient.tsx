@@ -148,7 +148,11 @@ const DEV_WARN_REPORT: CheckReport = {
   ],
 };
 
-export default function CheckClient() {
+type CheckClientProps = {
+  demoEndpoint?: string;
+};
+
+export default function CheckClient({ demoEndpoint }: CheckClientProps = {}) {
   const [endpoint, setEndpoint] = useState("");
   const [validationMsg, setValidationMsg] = useState("");
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
@@ -281,9 +285,26 @@ export default function CheckClient() {
             </p>
           )}
         </div>
-        <p className={styles.safetyMarker}>
-          Safe validation · MCP tools are never executed
-        </p>
+        <ul className={styles.trustList} aria-label="Validation guarantees">
+          <li className={styles.trustItem}>MCP tools are never executed</li>
+          <li className={styles.trustItem}>No credentials are stored</li>
+          <li className={styles.trustItem}>Reports are deterministic and exportable</li>
+        </ul>
+        {demoEndpoint && phase.kind === "idle" && (
+          <p className={styles.demoHint}>
+            <button
+              type="button"
+              className={styles.demoBtn}
+              onClick={() => {
+                setEndpoint(demoEndpoint);
+                setValidationMsg("");
+                setTimeout(() => inputRef.current?.focus(), 0);
+              }}
+            >
+              Try demo endpoint
+            </button>
+          </p>
+        )}
       </form>
 
       {/* Development-only fixture panel — not rendered in production builds */}
