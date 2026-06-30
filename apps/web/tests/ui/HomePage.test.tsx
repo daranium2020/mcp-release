@@ -153,11 +153,19 @@ describe("HomePage", () => {
 
   // ---- GitHub link ----
 
-  it("renders a GitHub link in the header", () => {
+  it("does not render a GitHub link in the header", () => {
     render(<HomePage />);
     const ghLinks = screen
       .getAllByRole("link")
       .filter((l) => l.getAttribute("href")?.includes("github.com"));
-    expect(ghLinks.length).toBeGreaterThanOrEqual(1);
+    expect(ghLinks.length).toBe(0);
+  });
+
+  it("renders the Feedback link in the header", () => {
+    render(<HomePage />);
+    const feedbackLinks = screen
+      .getAllByRole("link")
+      .filter((l) => l.getAttribute("href") === "mailto:feedback@mcprelease.dev");
+    expect(feedbackLinks.length).toBeGreaterThanOrEqual(1);
   });
 });

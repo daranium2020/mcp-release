@@ -120,12 +120,12 @@ describe("DocsPage: content", () => {
 
   // ---- Links ----
 
-  it("has at least one link to the GitHub repository", () => {
+  it("does not link to the private GitHub repository", () => {
     render(<DocsPage />);
     const ghLinks = screen
       .getAllByRole("link")
       .filter((l) => l.getAttribute("href")?.includes("github.com"));
-    expect(ghLinks.length).toBeGreaterThanOrEqual(1);
+    expect(ghLinks.length).toBe(0);
   });
 });
 

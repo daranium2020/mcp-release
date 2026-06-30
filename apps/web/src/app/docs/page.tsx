@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Header from "../../components/Header";
 import Footer from "../../components/Footer";
 import styles from "./page.module.css";
-import { DEMO_ENDPOINT, GITHUB_URL, SITE_URL } from "../../lib/constants";
+import { DEMO_ENDPOINT, SITE_URL } from "../../lib/constants";
 
 export const metadata: Metadata = {
   title: "Documentation",
@@ -268,15 +268,7 @@ export default function DocsPage() {
             <p>
               The JSON schema version is{" "}
               <code className={styles.code}>&quot;1&quot;</code>. All fields
-              are documented in{" "}
-              <a
-                href={GITHUB_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                the repository
-              </a>
-              .
+              are documented in the repository.
             </p>
           </section>
 
@@ -391,15 +383,7 @@ pnpm lint`}</code>
               the threshold is met or exceeded.
             </p>
             <p>
-              See{" "}
-              <a
-                href={GITHUB_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                the repository
-              </a>{" "}
-              for the full action manifest and inputs.
+              See the repository for the full action manifest and inputs.
             </p>
           </section>
         </div>

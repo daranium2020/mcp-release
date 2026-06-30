@@ -1,6 +1,5 @@
 import Image from "next/image";
 import styles from "./Header.module.css";
-import { GITHUB_URL } from "../lib/constants";
 
 export default function Header() {
   return (
@@ -23,12 +22,10 @@ export default function Header() {
             Docs
           </a>
           <a
-            href={GITHUB_URL}
+            href="mailto:feedback@mcprelease.dev"
             className={styles.ghLink}
-            target="_blank"
-            rel="noopener noreferrer"
           >
-            GitHub
+            Feedback
           </a>
         </nav>
       </div>

@@ -70,11 +70,25 @@ describe("Header", () => {
     expect(docsLink.getAttribute("href")).toBe("/docs");
   });
 
-  it("renders the GitHub navigation link", () => {
+  it("renders the Feedback navigation link", () => {
+    render(<Header />);
+    const feedbackLink = screen.getByRole("link", { name: /^feedback$/i });
+    expect(feedbackLink).toBeDefined();
+  });
+
+  it("Feedback link points to the feedback email address", () => {
+    render(<Header />);
+    const feedbackLink = screen.getByRole("link", { name: /^feedback$/i });
+    expect(feedbackLink.getAttribute("href")).toBe(
+      "mailto:feedback@mcprelease.dev",
+    );
+  });
+
+  it("does not render a GitHub navigation link in the header", () => {
     render(<Header />);
     const ghLinks = screen
       .getAllByRole("link")
       .filter((l) => l.getAttribute("href")?.includes("github.com"));
-    expect(ghLinks.length).toBeGreaterThanOrEqual(1);
+    expect(ghLinks.length).toBe(0);
   });
 });

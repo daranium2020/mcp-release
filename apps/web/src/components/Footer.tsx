@@ -1,5 +1,5 @@
 import styles from "./Footer.module.css";
-import { SITE_NAME, GITHUB_URL } from "../lib/constants";
+import { SITE_NAME } from "../lib/constants";
 
 export default function Footer() {
   return (
@@ -12,12 +12,10 @@ export default function Footer() {
         </a>
         <span className={styles.sep} aria-hidden="true">·</span>
         <a
-          href={GITHUB_URL}
+          href="mailto:feedback@mcprelease.dev"
           className={styles.link}
-          target="_blank"
-          rel="noopener noreferrer"
         >
-          GitHub
+          Feedback
         </a>
         <span className={styles.sep} aria-hidden="true">·</span>
         <span className={styles.note}>MCP server validation</span>
