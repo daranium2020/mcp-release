@@ -247,6 +247,27 @@ export async function startInternalErrorServer(): Promise<FixtureServer> {
   });
 }
 
+/**
+ * Server that responds to every MCP POST with a JSON-RPC 2.0 error object.
+ *
+ * Simulates a server that rejects the `initialize` handshake at the protocol
+ * layer — i.e., the HTTP response is 200 OK but the body is a JSON-RPC error.
+ * The MCP SDK throws McpError{code} for this. Used to verify that MCP Release
+ * classifies the result as INIT_FAILURE (not REMOTE_HTTP_ERROR).
+ */
+export async function startJsonRpcErrorServer(
+  code = -32600,
+  message = "Invalid Request",
+): Promise<FixtureServer> {
+  return startRawFixture((req, res) => {
+    const body = req.body as { id?: unknown };
+    const rawId = body.id;
+    const id =
+      typeof rawId === "string" || typeof rawId === "number" ? rawId : null;
+    res.json({ jsonrpc: "2.0", id, error: { code, message } });
+  });
+}
+
 /** Generic fixture: always responds with the given HTTP status and body. */
 export async function startHttpStatusServer(
   status: number,
