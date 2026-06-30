@@ -1,15 +1,22 @@
+import Image from "next/image";
 import styles from "./Header.module.css";
-import { SITE_NAME, SITE_DESCRIPTION, GITHUB_URL } from "../lib/constants";
+import { GITHUB_URL } from "../lib/constants";
 
 export default function Header() {
   return (
     <header className={styles.header}>
       <div className={styles.inner}>
         <div className={styles.brand}>
-          <a href="/" className={styles.wordmark}>
-            {SITE_NAME}
+          <a href="/" className={styles.logoLink}>
+            <Image
+              src="/brand/mcp-release-logo-light-text.png"
+              alt="MCP Release"
+              width={571}
+              height={227}
+              className={styles.logo}
+              priority
+            />
           </a>
-          <span className={styles.descriptor}>{SITE_DESCRIPTION}</span>
         </div>
         <nav className={styles.nav} aria-label="Site navigation">
           <a href="/docs" className={styles.navLink}>
