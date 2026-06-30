@@ -14,5 +14,6 @@ export {
   startForbiddenServer,
   startInternalErrorServer,
   startHttpStatusServer,
+  startJsonRpcErrorServer,
 } from "./broken-servers.js";
 export type { FixtureServer } from "./helpers.js";

@@ -65318,6 +65318,15 @@ function extractHttpStatus(err) {
   if (cause == null || typeof cause !== "object") return null;
   const code = cause.code;
   if (typeof code !== "number" || !Number.isFinite(code)) return null;
+  if (code < 100 || code > 599) return null;
+  return code;
+}
+function extractRpcErrorCode(err) {
+  const cause = err.cause;
+  if (cause == null || typeof cause !== "object") return null;
+  const code = cause.code;
+  if (typeof code !== "number" || !Number.isFinite(code)) return null;
+  if (code >= 0) return null;
   return code;
 }
 async function runCheck(serverUrl, opts = {}) {
@@ -65357,6 +65366,7 @@ async function runCheck(serverUrl, opts = {}) {
       }
     } else if (err instanceof TransportError) {
       const httpStatus = extractHttpStatus(err);
+      const rpcCode = extractRpcErrorCode(err);
       if (httpStatus === 401) {
         findings.push(
           makeFinding(
@@ -65375,6 +65385,15 @@ async function runCheck(serverUrl, opts = {}) {
             "REMOTE_HTTP_ERROR",
             "FAIL",
             "Remote MCP server returned an unexpected HTTP response."
+          )
+        );
+      } else if (rpcCode !== null) {
+        findings.push(
+          makeFinding(
+            "INIT_FAILURE",
+            "FAIL",
+            "MCP initialization failed: the server returned a protocol error.",
+            { rpcCode }
           )
         );
       } else if (err.message.includes("timeout")) {

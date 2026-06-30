@@ -9,8 +9,10 @@ import { describeTransportError, type TransportDiagnostic } from "./diagnostics.
  * Extract a numeric HTTP status code from the cause of a TransportError.
  *
  * The MCP SDK throws StreamableHTTPError with a numeric .code equal to the
- * HTTP response status. OS/network errors always use string codes. Checking
- * typeof === "number" selects only HTTP-status-originated causes.
+ * HTTP response status. Valid HTTP status codes are always in the range
+ * 100–599. OS/network errors use string codes (e.g. "ECONNREFUSED").
+ * JSON-RPC error codes (e.g. -32600) are negative and explicitly excluded
+ * so they are not misclassified as HTTP responses.
  *
  * Returns null for any other error shape — never throws.
  */
@@ -19,6 +21,34 @@ function extractHttpStatus(err: TransportError): number | null {
   if (cause == null || typeof cause !== "object") return null;
   const code = (cause as { code?: unknown }).code;
   if (typeof code !== "number" || !Number.isFinite(code)) return null;
+  // Restrict to the valid HTTP status-code range. JSON-RPC error codes
+  // (e.g. -32600, -32601) are negative and must not reach the HTTP branch.
+  if (code < 100 || code > 599) return null;
+  return code;
+}
+
+/**
+ * Detect a JSON-RPC protocol error code in the cause of a TransportError.
+ *
+ * When the MCP SDK receives a JSON-RPC error response (e.g., to an
+ * `initialize` request), it throws McpError with a numeric .code equal to
+ * the JSON-RPC error code — always a negative integer per the JSON-RPC 2.0
+ * specification (standard range: -32700 to -32600; implementation range:
+ * -32099 to -32000).
+ *
+ * This helper is checked only after extractHttpStatus() returns null, so
+ * there is no risk of an HTTP status code being misidentified as an RPC code.
+ *
+ * Returns null when the cause has no recognizable JSON-RPC error code.
+ */
+function extractRpcErrorCode(err: TransportError): number | null {
+  const cause = err.cause;
+  if (cause == null || typeof cause !== "object") return null;
+  const code = (cause as { code?: unknown }).code;
+  if (typeof code !== "number" || !Number.isFinite(code)) return null;
+  // JSON-RPC error codes are always negative. HTTP status codes are always
+  // ≥ 100, so a negative value here unambiguously identifies a protocol error.
+  if (code >= 0) return null;
   return code;
 }
 
@@ -81,8 +111,9 @@ export async function runCheck(
       // body in err.message for every HTTP-status error. Any error with a recognized
       // numeric status must be classified by status alone — err.message must never
       // be inspected or forwarded. Message-substring classification runs only when
-      // httpStatus === null (genuine transport failures with no HTTP status).
+      // both httpStatus and rpcCode are null (genuine transport failures).
       const httpStatus = extractHttpStatus(err);
+      const rpcCode = extractRpcErrorCode(err);
       if (httpStatus === 401) {
         findings.push(
           makeFinding(
@@ -103,6 +134,19 @@ export async function runCheck(
             "REMOTE_HTTP_ERROR",
             "FAIL",
             "Remote MCP server returned an unexpected HTTP response.",
+          ),
+        );
+      } else if (rpcCode !== null) {
+        // JSON-RPC protocol error during initialize (e.g., McpError{code: -32600}).
+        // The MCP SDK embeds the server's JSON-RPC error message in err.message —
+        // never forward it (potential server-response leakage). Expose only the
+        // numeric code as safe diagnostic context.
+        findings.push(
+          makeFinding(
+            "INIT_FAILURE",
+            "FAIL",
+            "MCP initialization failed: the server returned a protocol error.",
+            { rpcCode },
           ),
         );
       } else if (err.message.includes("timeout")) {
