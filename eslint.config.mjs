@@ -57,6 +57,15 @@ export default [
       "@next/next/no-html-link-for-pages": "off",
     },
   },
+  // opengraph-image.tsx generates a static PNG using next/og's ImageResponse
+  // (Satori). next/image cannot be used in that JSX — it is a server-side image
+  // rendering context, not a browser page. <img> is correct and intentional.
+  {
+    files: ["apps/web/src/app/opengraph-image.tsx"],
+    rules: {
+      "@next/next/no-img-element": "off",
+    },
+  },
   {
     ignores: [
       "**/dist/**",
