@@ -21,9 +21,6 @@ coverage/
 .idea/
 *.swp
 
-# AI assistant tool configuration (user-specific)
-.claude/
-
 # Vercel project linkage and local environment files
 .vercel/
 .env*
