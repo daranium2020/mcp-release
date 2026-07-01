@@ -144,7 +144,7 @@ Two independent Vercel projects:
 | `mcp-release` | `apps/web` | https://mcprelease.dev |
 | `mcp-release-fixture` | `apps/public-mcp-fixture` | https://mcp-release-fixture.vercel.app |
 
-Both have automatic git deployments disabled (`"git": { "deploymentEnabled": false }` in their respective `vercel.json`). Deployments are triggered manually.
+`apps/web` (`mcprelease.dev`) deploys automatically on every push to `main`. `apps/public-mcp-fixture` has automatic deployments disabled and is deployed manually.
 
 `apps/web` depends on `packages/core` and `packages/reporter`. Its build command builds those packages first:
 
@@ -165,7 +165,7 @@ pnpm install                  # install all workspace dependencies
 pnpm typecheck                # TypeScript type check (all packages + apps)
 pnpm lint                     # ESLint across the workspace
 pnpm build                    # build all packages and apps
-pnpm test                     # run all tests (22 files, 398 tests)
+pnpm test                     # run all tests (500+ automated tests)
 ```
 
 ### Start the web app

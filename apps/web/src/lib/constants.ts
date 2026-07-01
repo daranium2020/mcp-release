@@ -7,9 +7,6 @@ export const SITE_DESCRIPTION = "MCP server validation";
 // Canonical public URL for metadataBase and Open Graph.
 export const SITE_URL = "https://mcprelease.dev";
 
-// Linked from the header. Points to the public repository.
-export const GITHUB_URL = "https://github.com/daranium2020/mcp-release";
-
 export const DEMO_ENDPOINT = "https://mcp-release-fixture.vercel.app/mcp";
 
 export const MIN_TIMEOUT_MS = 1_000;

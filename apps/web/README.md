@@ -1,36 +1,45 @@
 # @mcp-release/web
 
-Next.js 15 (App Router) web interface for MCP Release validation.
+Next.js 15 (App Router) web interface for MCP Release. Live at [https://mcprelease.dev](https://mcprelease.dev).
 
-> **Status**: Milestone 3 local MVP. Not yet publicly deployed. No authentication, billing, or persistent storage.
-
-## Architecture
+## Application structure
 
 ```
-apps/web/
-├── src/
-│   ├── app/
-│   │   ├── layout.tsx              HTML shell, global metadata
-│   │   ├── page.tsx                Landing page (server component)
-│   │   ├── globals.css             Design tokens, reset, base styles
-│   │   └── api/check/
-│   │       ├── handler.ts          Core request handler (injectable deps, testable)
-│   │       └── route.ts            Next.js route entry (POST /api/check)
-│   ├── components/
-│   │   ├── Header.tsx              Sticky header — wordmark, GitHub link
-│   │   ├── Footer.tsx              Site footer
-│   │   ├── CheckClient.tsx         Client component — form, loading, error states
-│   │   └── Results.tsx             Report display — status, findings, tools, exports
-│   ├── lib/
-│   │   ├── constants.ts            Public configuration (site name, GitHub URL, timeouts)
-│   │   ├── rate-limit.ts           Sliding-window IP rate limiter (in-memory)
-│   │   └── concurrency.ts          Concurrency guard (in-memory)
-│   └── types/
-│       └── api.ts                  Request/response type definitions
-└── tests/
-    ├── api/check.test.ts           19 API handler tests (node environment)
-    └── ui/CheckClient.test.tsx     22 UI component tests (jsdom environment)
+apps/web/src/
+├── app/
+│   ├── layout.tsx              HTML shell, global metadata, Open Graph tags
+│   ├── page.tsx                Landing page and validation form
+│   ├── globals.css             Design tokens, reset, base styles
+│   ├── docs/page.tsx           Documentation page (/docs)
+│   ├── robots.ts               /robots.txt
+│   ├── sitemap.ts              /sitemap.xml
+│   ├── opengraph-image.tsx     /opengraph-image (1200×630 PNG via next/og)
+│   ├── twitter-image.tsx       /twitter-image
+│   └── api/check/
+│       ├── handler.ts          Request handler (injectable deps, testable)
+│       └── route.ts            Next.js route entry (POST /api/check)
+├── components/
+│   ├── Header.tsx              Sticky header — wordmark, Docs link, Feedback link
+│   ├── Footer.tsx              Site footer
+│   ├── CheckClient.tsx         Client component — form, loading, error states
+│   └── Results.tsx             Report display — status, findings, tools, exports
+└── lib/
+    ├── constants.ts            Site URL, demo endpoint, timeout bounds
+    ├── rate-limit.ts           Sliding-window IP rate limiter (in-memory)
+    └── concurrency.ts          Concurrency guard (in-memory)
 ```
+
+## Routes
+
+| Route | Description |
+|---|---|
+| `/` | Homepage — validation form and results |
+| `/docs` | Documentation page |
+| `/api/check` | `POST` — runs validation and returns a report |
+| `/robots.txt` | Crawl rules (allows `/`, disallows `/api/`) |
+| `/sitemap.xml` | Sitemap (homepage and `/docs`) |
+| `/opengraph-image` | OG preview image |
+| `/twitter-image` | Twitter card image |
 
 ## API contract
 
@@ -47,7 +56,7 @@ apps/web/
 
 | Field | Type | Required | Constraints |
 |---|---|---|---|
-| `endpoint` | string | yes | Valid HTTPS URL, no embedded credentials |
+| `endpoint` | string | yes | HTTPS URL, no embedded credentials |
 | `timeoutMs` | number | no | 1000–30000 (default 10000) |
 
 Unexpected fields are rejected.
@@ -90,60 +99,46 @@ Cache-Control: no-store
 
 No CORS headers — the API is same-origin only.
 
-## Environment expectations
+## Abuse controls (in-memory)
 
-No environment variables are required to run the web app. All configuration lives in `src/lib/constants.ts` and is safe for browser exposure.
+- **Rate limit:** 10 requests per IP per minute (sliding window)
+- **Concurrency:** max 5 simultaneous outbound checks
 
-When running in production:
-- All endpoint URLs are validated as HTTPS before any network request
-- Rate limiting uses `x-forwarded-for` as the IP key (not verified without a trusted proxy — see limitations)
-- No secrets, tokens, or external service credentials are needed
+Both are per-process. See the Known Limitations section in the documentation page.
 
-To set the GitHub repository link, update `GITHUB_URL` in `src/lib/constants.ts`.
+## Deployment
+
+Pushes to `main` deploy automatically to Vercel (`mcprelease.dev`). The build command in `vercel.json` builds `packages/core` and `packages/reporter` before `apps/web`:
+
+```
+pnpm --filter @mcp-release/core build && pnpm --filter @mcp-release/reporter build && pnpm --filter @mcp-release/web build
+```
+
+No environment variables are required. All configuration is in `src/lib/constants.ts`.
 
 ## Local development
 
 ```bash
-# from the workspace root
+# From the workspace root
 pnpm install
-pnpm build                    # build core and reporter first
-cd apps/web
-pnpm dev                      # start dev server on http://localhost:3000
+pnpm build                                 # build all packages first
+pnpm --filter @mcp-release/web dev         # start dev server on http://localhost:3000
 ```
 
-Or from the workspace root:
+The development server shows fixture buttons (PASS / WARNING / FAIL) that load sample reports without network requests. These are removed in production builds.
+
+## Tests
+
+Tests run from the workspace root:
 
 ```bash
-pnpm install && pnpm -r run build --filter @mcp-release/core --filter @mcp-release/reporter
-cd apps/web && pnpm dev
+pnpm test                                  # all tests
+pnpm test -- apps/web/tests/api/           # API handler tests (node environment)
+pnpm test -- apps/web/tests/ui/            # UI tests (jsdom environment)
 ```
 
-## Running tests
+API tests inject a mock validator and fresh rate limiter/concurrency guard — no network required. UI tests render components in jsdom with `window.fetch` stubbed.
 
-Tests run from the workspace root with vitest:
+## Feedback
 
-```bash
-pnpm test                               # all tests
-pnpm test -- apps/web/tests/api/        # API tests only (node environment)
-pnpm test -- apps/web/tests/ui/         # UI tests only (jsdom environment)
-```
-
-API tests (`check.test.ts`): inject a mock validator function, fresh rate limiter, and fresh concurrency guard — no network required, no module state shared between tests.
-
-UI tests (`CheckClient.test.tsx`): render components in jsdom, stub `window.fetch` — no network required.
-
-## Production prerequisites
-
-Before public deployment the following must be addressed:
-
-1. **Proxy-verified IP for rate limiting**: `x-forwarded-for` is currently read without verification. Use a trusted proxy header or the verified source IP from your deployment platform.
-
-2. **Shared rate limiting**: Replace `src/lib/rate-limit.ts` singleton with a shared store (Redis, Upstash, etc.) before running multiple app instances.
-
-3. **Shared concurrency guard**: Replace `src/lib/concurrency.ts` singleton similarly.
-
-4. **Content Security Policy**: Add a strict `Content-Security-Policy` header in `next.config.ts` matching the production asset origins.
-
-5. **Monitoring and alerting**: Add request duration metrics and error rate alerts for the `/api/check` route.
-
-MCP tools are **never invoked** — only `initialize` and `tools/list` are called.
+[feedback@mcprelease.dev](mailto:feedback@mcprelease.dev)

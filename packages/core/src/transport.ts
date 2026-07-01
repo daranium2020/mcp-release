@@ -1,12 +1,12 @@
 /**
  * Transport adapter for MCP Streamable HTTP.
  *
- * DNS PINNING (M2):
+ * DNS PINNING:
  * A custom undici Agent is used for HTTPS connections. The Agent's connector
  * function routes every outgoing TCP/TLS socket to the IP address that was
- * resolved and validated before the MCP Client.connect() call. This closes
- * the TOCTOU window that existed between our preflight DNS check and the
- * SDK's own resolution in M1.
+ * pre-resolved and SSRF-validated before the MCP Client.connect() call. This
+ * closes the TOCTOU window between preflight DNS validation and the SDK's own
+ * DNS resolution.
  *
  * - For the initial hostname: the pre-validated IP is pinned; no further DNS
  *   resolution occurs for that origin.
