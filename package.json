@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "clean": "pnpm -r run clean && rm -rf node_modules",
     "clean:dist": "pnpm -r run clean",
-    "typecheck:ci": "pnpm run clean:dist && pnpm install --frozen-lockfile && tsc --build && pnpm --filter @mcp-release/fixture-servers run typecheck"
+    "typecheck:ci": "pnpm run clean:dist && pnpm install --frozen-lockfile && tsc --build && pnpm --filter @mcp-release/fixture-servers run typecheck",
+    "smoke:production": "node scripts/production-smoke.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
