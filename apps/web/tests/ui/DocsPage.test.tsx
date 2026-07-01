@@ -118,6 +118,37 @@ describe("DocsPage: content", () => {
     );
   });
 
+  // ---- Privacy and data handling ----
+
+  it("has a Privacy and data handling section", () => {
+    render(<DocsPage />);
+    const h2s = screen
+      .getAllByRole("heading", { level: 2 })
+      .map((el) => el.textContent?.toLowerCase() ?? "");
+    expect(h2s.some((t) => t.includes("privacy"))).toBe(true);
+  });
+
+  it("states that discovered tools are never executed", () => {
+    const { container } = render(<DocsPage />);
+    const text = container.textContent?.toLowerCase() ?? "";
+    expect(text).toContain("never executed");
+  });
+
+  it("states credentials are not requested or stored", () => {
+    const { container } = render(<DocsPage />);
+    const text = container.textContent?.toLowerCase() ?? "";
+    expect(text).toContain("not request");
+    expect(text).toContain("not store");
+  });
+
+  it("includes the feedback contact email", () => {
+    render(<DocsPage />);
+    const feedbackLinks = screen
+      .getAllByRole("link")
+      .filter((l) => l.getAttribute("href") === "mailto:feedback@mcprelease.dev");
+    expect(feedbackLinks.length).toBeGreaterThanOrEqual(1);
+  });
+
   // ---- Links ----
 
   it("does not link to the private GitHub repository", () => {
@@ -127,6 +158,7 @@ describe("DocsPage: content", () => {
       .filter((l) => l.getAttribute("href")?.includes("github.com"));
     expect(ghLinks.length).toBe(0);
   });
+
 });
 
 describe("DocsPage: metadata", () => {

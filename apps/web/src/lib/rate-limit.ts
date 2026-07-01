@@ -1,9 +1,7 @@
 // In-memory sliding-window rate limiter.
 //
-// MVP LIMITATION: State is per-process and resets on restart. This is
-// sufficient for single-instance local or low-traffic deployment but MUST
-// be replaced with a shared store (Redis, Upstash, etc.) before running
-// multiple horizontally-scaled instances in production.
+// Per-process state only; resets on restart. Sufficient for a single instance.
+// Horizontally-scaled deployments need a shared store (Redis, Upstash, etc.).
 
 type Bucket = { count: number; windowStart: number };
 

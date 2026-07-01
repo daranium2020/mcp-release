@@ -306,6 +306,43 @@ export default function DocsPage() {
             </ul>
           </section>
 
+          {/* Privacy and data handling */}
+          <section aria-labelledby="privacy-heading">
+            <h2 id="privacy-heading" className={styles.h2}>
+              Privacy and data handling
+            </h2>
+            <p>
+              MCP Release does not store endpoint URLs, request bodies,
+              reports, or validation results. Findings are returned to the
+              browser in the HTTP response and are not retained server-side.
+              Export or save them before closing the tab.
+            </p>
+            <p>
+              The application does not request, accept, or store credentials.
+              Validation connects as an unauthenticated client. Discovered
+              tools are listed but never executed; no tool arguments are
+              constructed or sent.
+            </p>
+            <p>
+              JSON and Markdown exports are generated from the report data
+              returned in the response. They are not transmitted to any
+              external service.
+            </p>
+            <p>
+              Transport diagnostic errors are logged server-side at the time of
+              the request. As with all hosted applications, the hosting provider
+              may retain operational logs including request metadata and error
+              diagnostics. The repository does not configure a specific
+              retention period for those logs.
+            </p>
+            <p>
+              Questions or concerns:{" "}
+              <a href="mailto:feedback@mcprelease.dev">
+                feedback@mcprelease.dev
+              </a>
+            </p>
+          </section>
+
           {/* Demo endpoint */}
           <section aria-labelledby="demo-heading">
             <h2 id="demo-heading" className={styles.h2}>

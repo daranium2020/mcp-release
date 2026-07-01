@@ -49,9 +49,8 @@ function errorJson(
   });
 }
 
-// MVP: x-forwarded-for is NOT verified against a trusted proxy and can be
-// spoofed. It is used as a best-effort bucket key for rate limiting only.
-// Replace with verified proxy extraction before public deployment.
+// x-forwarded-for is used as a best-effort rate-limit key. It is not verified
+// against a trusted proxy and may be spoofable without one in front.
 function extractIp(req: Request): string {
   return (
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "direct"
