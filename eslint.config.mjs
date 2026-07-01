@@ -36,6 +36,16 @@ export default [
       "no-undef": "off",
     },
   },
+  // scripts/*.mjs — plain Node.js ES modules; no TypeScript parser needed.
+  {
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        ...globals.browser,
+      },
+    },
+  },
   // Register the @next/next plugin globally (no files filter) so Next.js build's
   // plugin-detection passes: it calls calculateConfigForFile on the config file
   // itself, which only sees plugins registered without a files constraint.
