@@ -99,6 +99,15 @@ describe("DocsPage: content", () => {
     expect(text).toContain("not saved");
   });
 
+  // ---- No Unicode dash punctuation in rendered text ----
+
+  it("does not contain em dash or en dash in rendered text", () => {
+    const { container } = render(<DocsPage />);
+    const text = container.textContent ?? "";
+    expect(text).not.toContain("—"); // em dash
+    expect(text).not.toContain("–"); // en dash
+  });
+
   // ---- No unsupported claims ----
 
   it("does not contain the word certified", () => {

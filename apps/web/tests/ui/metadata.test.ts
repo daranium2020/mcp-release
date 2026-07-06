@@ -136,6 +136,13 @@ describe("opengraph-image exports", () => {
     expect((ogAlt as string).length).toBeGreaterThan(0);
   });
 
+  it("alt text uses colon separator, not em dash or en dash", () => {
+    const alt = ogAlt as string;
+    expect(alt).toContain("MCP Release:");
+    expect(alt).not.toContain("—"); // em dash
+    expect(alt).not.toContain("–"); // en dash
+  });
+
   it("runtime is nodejs", () => {
     expect(ogRuntime).toBe("nodejs");
   });
