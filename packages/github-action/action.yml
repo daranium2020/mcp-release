@@ -17,7 +17,9 @@ inputs:
   header:
     description: >
       Newline-separated additional request headers in "Name: value" format.
-      Example: "X-API-Key: my-key\nX-Tenant-Id: acme"
+      For non-secret headers only. Values written here appear in plaintext in
+      your workflow YAML. Use header-env or bearer-token-env for secrets.
+      Example: "X-Tenant-Id: acme\nX-Version: 2"
     required: false
     default: ''
   header-env:

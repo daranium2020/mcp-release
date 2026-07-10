@@ -64940,9 +64940,9 @@ async function connectToMcpServer(serverUrl, opts = {}) {
     baseFetch = fetch;
   }
   let redirectCount = 0;
-  const fetchChain = async (input, rawInit, chainVisited) => {
+  const fetchChain = async (input, rawInit, chainVisited, activeRequestHeaders = requestHeaders) => {
     let init2 = rawInit;
-    if (Object.keys(requestHeaders).length > 0) {
+    if (Object.keys(activeRequestHeaders).length > 0) {
       const sdkHeaders = rawInit?.headers;
       const sdkRecord = {};
       if (sdkHeaders instanceof Headers) {
@@ -64954,7 +64954,7 @@ async function connectToMcpServer(serverUrl, opts = {}) {
       }
       init2 = {
         ...rawInit,
-        headers: { ...requestHeaders, ...sdkRecord }
+        headers: { ...activeRequestHeaders, ...sdkRecord }
       };
     }
     const urlStr = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -65015,12 +65015,13 @@ async function connectToMcpServer(serverUrl, opts = {}) {
       }
       const origOrigin = new URL(urlStr).origin;
       const destOrigin = new URL(resolved).origin;
+      const isCrossOrigin = origOrigin !== destOrigin;
       let redirectInit = {
         ...init2,
         redirect: "manual",
         signal: mergedSignal
       };
-      if (origOrigin !== destOrigin) {
+      if (isCrossOrigin) {
         const existingHdrs = redirectInit.headers;
         const safeHeaders = {};
         if (existingHdrs && typeof existingHdrs === "object" && !Array.isArray(existingHdrs)) {
@@ -65033,7 +65034,7 @@ async function connectToMcpServer(serverUrl, opts = {}) {
         }
         redirectInit = { ...redirectInit, headers: safeHeaders };
       }
-      return fetchChain(resolved, redirectInit, chainVisited);
+      return fetchChain(resolved, redirectInit, chainVisited, isCrossOrigin ? {} : activeRequestHeaders);
     }
     const contentLength = response.headers.get("content-length");
     if (contentLength !== null && parseInt(contentLength, 10) > MAX_RESPONSE_SIZE_BYTES) {
@@ -65043,7 +65044,7 @@ async function connectToMcpServer(serverUrl, opts = {}) {
     }
     return response;
   };
-  const fetchWithGuard = (input, init2) => fetchChain(input, init2, /* @__PURE__ */ new Set());
+  const fetchWithGuard = (input, init2) => fetchChain(input, init2, /* @__PURE__ */ new Set(), requestHeaders);
   const startMs = Date.now();
   const url2 = new URL(serverUrl);
   const transport = new StreamableHTTPClientTransport(url2, {
@@ -65556,7 +65557,7 @@ function parseHeaderEnvFlag(flag, env) {
   validateHeaderName(name);
   if (varName === "") {
     throw new HeaderValidationError(
-      `Invalid --header-env value: "${flag}" \u2014 environment variable name must not be empty`
+      `Invalid --header-env value: "${flag}": environment variable name must not be empty`
     );
   }
   const value = env[varName];
@@ -65786,8 +65787,11 @@ function parseInputs() {
     }
     for (const [name, value] of Object.entries(requestHeaders)) {
       const lower = name.toLowerCase();
-      if (lower === "x-api-key" || lower === "cookie" || lower === "x-auth-token" || lower === "proxy-authorization" || lower === "x-secret" || lower === "x-token") {
+      if (lower === "authorization" || lower === "x-api-key" || lower === "cookie" || lower === "x-auth-token" || lower === "proxy-authorization" || lower === "x-secret" || lower === "x-token") {
         core.setSecret(value);
+        if (lower === "authorization" && value.startsWith("Bearer ")) {
+          core.setSecret(value.slice("Bearer ".length));
+        }
       }
     }
   }

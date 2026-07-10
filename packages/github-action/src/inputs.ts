@@ -65,10 +65,11 @@ export function parseInputs(): ActionInputs {
       }
       throw err;
     }
-    // Mask sensitive non-authorization header values in GitHub Actions logs
+    // Mask sensitive header values in GitHub Actions logs
     for (const [name, value] of Object.entries(requestHeaders)) {
       const lower = name.toLowerCase();
       if (
+        lower === "authorization" ||
         lower === "x-api-key" ||
         lower === "cookie" ||
         lower === "x-auth-token" ||
@@ -77,6 +78,11 @@ export function parseInputs(): ActionInputs {
         lower === "x-token"
       ) {
         core.setSecret(value);
+        // Also mask the bare token for "Bearer <token>" values so the token
+        // alone cannot appear in logs even without the "Bearer " prefix.
+        if (lower === "authorization" && value.startsWith("Bearer ")) {
+          core.setSecret(value.slice("Bearer ".length));
+        }
       }
     }
   }

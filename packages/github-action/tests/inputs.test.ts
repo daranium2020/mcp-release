@@ -209,6 +209,68 @@ describe("parseInputs — header-env", () => {
   });
 });
 
+describe("parseInputs — Authorization masking", () => {
+  it("masks the full Authorization header value (Bearer prefix included)", () => {
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      header: "Authorization: Bearer literal-secret",
+    });
+    parseInputs();
+    expect(core.setSecret).toHaveBeenCalledWith("Bearer literal-secret");
+  });
+
+  it("also masks the bare token when value starts with 'Bearer '", () => {
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      header: "Authorization: Bearer bare-token-part",
+    });
+    parseInputs();
+    expect(core.setSecret).toHaveBeenCalledWith("bare-token-part");
+  });
+
+  it("masks Cookie header value", () => {
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      header: "Cookie: session=supersecret",
+    });
+    parseInputs();
+    expect(core.setSecret).toHaveBeenCalledWith("session=supersecret");
+  });
+
+  it("masks X-API-Key header value", () => {
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      header: "X-API-Key: sk-secret-key",
+    });
+    parseInputs();
+    expect(core.setSecret).toHaveBeenCalledWith("sk-secret-key");
+  });
+
+  it("header-env path: Authorization value is masked", () => {
+    process.env["AUTH_VAL"] = "Bearer env-secret";
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      "header-env": "Authorization=AUTH_VAL",
+    });
+    parseInputs();
+    expect(core.setSecret).toHaveBeenCalledWith("Bearer env-secret");
+    expect(core.setSecret).toHaveBeenCalledWith("env-secret");
+    delete process.env["AUTH_VAL"];
+  });
+
+  it("bearer-token-env path: raw token is masked (existing behaviour preserved)", () => {
+    process.env["MY_TOKEN"] = "bearer-env-raw-token";
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      "bearer-token-env": "MY_TOKEN",
+    });
+    parseInputs();
+    // Raw token masked before buildRequestHeaders (existing behaviour)
+    expect(core.setSecret).toHaveBeenCalledWith("bearer-env-raw-token");
+    delete process.env["MY_TOKEN"];
+  });
+});
+
 describe("parseInputs — no secret values in error messages", () => {
   it("error for missing env var does not expose other env var values", () => {
     process.env["OTHER_SECRET"] = "ultra-secret";
