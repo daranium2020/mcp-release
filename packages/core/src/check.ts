@@ -58,6 +58,20 @@ export type CheckOptions = {
   /** Allow HTTP (only valid in test/development environments) */
   allowHttp?: boolean;
   /**
+   * Allow connections to private/loopback/link-local IP ranges.
+   *
+   * NEVER set by the web API. Only the CLI and GitHub Action set this,
+   * because they run in the user's own environment where private-network
+   * access is intentional. Web SSRF protections remain fully intact.
+   */
+  allowPrivateNetworks?: boolean;
+  /**
+   * Additional HTTP headers sent with every MCP request (e.g., Authorization).
+   * Used by the CLI and GitHub Action for authenticated endpoints.
+   * The web API never sets this — the web checker accepts no credentials.
+   */
+  requestHeaders?: Record<string, string>;
+  /**
    * Optional callback invoked on transport failure with a sanitized diagnostic
    * record. Called server-side only; never forwarded to the client response.
    */
@@ -73,7 +87,10 @@ export async function runCheck(
   const safeUrl = redactUrl(serverUrl);
   const findings: Finding[] = [];
 
-  const ssrfOpts = { allowHttp: opts.allowHttp ?? false };
+  const ssrfOpts = {
+    allowHttp: opts.allowHttp ?? false,
+    allowPrivateNetworks: opts.allowPrivateNetworks ?? false,
+  };
 
   let connectResult: Awaited<ReturnType<typeof connectToMcpServer>> | null = null;
 
@@ -81,6 +98,7 @@ export async function runCheck(
     const connectOpts: ConnectOptions = { ssrf: ssrfOpts };
     if (opts.timeoutMs !== undefined) connectOpts.timeoutMs = opts.timeoutMs;
     if (opts.maxRedirects !== undefined) connectOpts.maxRedirects = opts.maxRedirects;
+    if (opts.requestHeaders !== undefined) connectOpts.requestHeaders = opts.requestHeaders;
     connectResult = await connectToMcpServer(serverUrl, connectOpts);
   } catch (err) {
     const durationMs = Date.now() - startMs;

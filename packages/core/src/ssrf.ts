@@ -14,6 +14,14 @@ export class SsrfError extends Error {
 export type SsrfOptions = {
   /** Allow HTTP — only valid for localhost in test/development */
   allowHttp?: boolean;
+  /**
+   * Allow connections to private/loopback/link-local IP ranges.
+   *
+   * NEVER set in the web API path. Only the CLI and Action set this, because
+   * they run in the user's own environment where private-network access is
+   * intentional and the user controls the network.
+   */
+  allowPrivateNetworks?: boolean;
   maxRedirects?: number;
   /**
    * Injectable DNS resolver for deterministic testing.
@@ -184,7 +192,7 @@ export async function resolveUrlForPinning(
   rawUrl: string,
   opts: SsrfOptions = {},
 ): Promise<ResolvedUrl> {
-  const { allowHttp = false, dnsResolver = systemDnsResolver } = opts;
+  const { allowHttp = false, allowPrivateNetworks = false, dnsResolver = systemDnsResolver } = opts;
 
   let url: URL;
   try {
@@ -219,24 +227,23 @@ export async function resolveUrlForPinning(
         "HTTPS_REQUIRED",
       );
     }
-    // HTTP only allowed for localhost literals in dev/test mode
     const hostname = url.hostname.toLowerCase();
     const isLocalhostLiteral =
       hostname === "localhost" ||
       hostname === "127.0.0.1" ||
       hostname === "::1";
-    if (!isLocalhostLiteral) {
+    if (!isLocalhostLiteral && !allowPrivateNetworks) {
       throw new SsrfError(
         `HTTP is only allowed for localhost in development/test mode. Got: ${hostname}`,
         "HTTP_NON_LOCALHOST",
       );
     }
-    // Localhost literals are trusted; no IP pinning needed.
+    // Trusted literal or explicitly allowed private network; no IP pinning needed.
     return { hostname, port, isHttps: false, resolvedIps: [] };
   }
 
   // HTTPS: resolve all A/AAAA records and validate every IP
-  const resolvedIps = await resolveAndCheckHost(url.hostname, dnsResolver);
+  const resolvedIps = await resolveAndCheckHost(url.hostname, dnsResolver, allowPrivateNetworks);
   return { hostname: url.hostname, port, isHttps: true, resolvedIps };
 }
 
@@ -244,10 +251,11 @@ export async function resolveUrlForPinning(
 async function resolveAndCheckHost(
   hostname: string,
   dnsResolver: DnsResolver,
+  allowPrivateNetworks = false,
 ): Promise<string[]> {
   // IP literal — check directly, no DNS needed
   if (net.isIP(hostname) !== 0) {
-    if (isBlockedIp(hostname)) {
+    if (!allowPrivateNetworks && isBlockedIp(hostname)) {
       throw new SsrfError(`IP address is blocked: ${hostname}`, "BLOCKED_IP");
     }
     return [hostname];
@@ -270,14 +278,16 @@ async function resolveAndCheckHost(
     );
   }
 
-  // ALL resolved addresses must be safe — if ANY is private, reject.
-  // This prevents DNS rebinding through multi-A-record tricks.
-  for (const record of records) {
-    if (isBlockedIp(record.address)) {
-      throw new SsrfError(
-        `Resolved address is blocked: ${record.address} (for ${hostname})`,
-        "BLOCKED_RESOLVED_IP",
-      );
+  if (!allowPrivateNetworks) {
+    // ALL resolved addresses must be safe — if ANY is private, reject.
+    // This prevents DNS rebinding through multi-A-record tricks.
+    for (const record of records) {
+      if (isBlockedIp(record.address)) {
+        throw new SsrfError(
+          `Resolved address is blocked: ${record.address} (for ${hostname})`,
+          "BLOCKED_RESOLVED_IP",
+        );
+      }
     }
   }
 

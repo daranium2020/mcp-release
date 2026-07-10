@@ -47,6 +47,15 @@ export type ConnectOptions = {
   timeoutMs?: number;
   maxRedirects?: number;
   ssrf?: SsrfOptions;
+  /**
+   * Additional HTTP request headers sent with every MCP request.
+   * Used by the CLI and GitHub Action for authentication (Authorization,
+   * X-API-Key, etc.). The web API never sets this.
+   *
+   * Sensitive headers are dropped on cross-origin redirects by the existing
+   * redirect-handling logic in fetchChain.
+   */
+  requestHeaders?: Record<string, string>;
 };
 
 export type ConnectResult = {
@@ -205,6 +214,7 @@ export async function connectToMcpServer(
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxRedirects = opts.maxRedirects ?? MAX_REDIRECTS_DEFAULT;
   const ssrfOpts = opts.ssrf ?? {};
+  const requestHeaders = opts.requestHeaders ?? {};
 
   // Resolve DNS and validate URL — returns pinned IPs for HTTPS
   let resolvedUrl: Awaited<ReturnType<typeof resolveUrlForPinning>>;
@@ -248,9 +258,28 @@ export async function connectToMcpServer(
   // Redirect chains within a single request share the same Set to detect loops.
   const fetchChain = async (
     input: Parameters<typeof fetch>[0],
-    init: Parameters<typeof fetch>[1],
+    rawInit: Parameters<typeof fetch>[1],
     chainVisited: Set<string>,
   ): Promise<Response> => {
+    // Merge caller-supplied request headers (e.g., Authorization) into every
+    // request. SDK protocol headers take precedence on any name conflict.
+    // This merged init is also used for redirect init so that the existing
+    // cross-origin header-stripping logic handles sensitive headers correctly.
+    let init = rawInit;
+    if (Object.keys(requestHeaders).length > 0) {
+      const sdkHeaders = rawInit?.headers;
+      const sdkRecord: Record<string, string> = {};
+      if (sdkHeaders instanceof Headers) {
+        sdkHeaders.forEach((v, k) => { sdkRecord[k] = v; });
+      } else if (sdkHeaders && typeof sdkHeaders === "object" && !Array.isArray(sdkHeaders)) {
+        Object.assign(sdkRecord, sdkHeaders as Record<string, string>);
+      }
+      init = {
+        ...rawInit,
+        headers: { ...requestHeaders, ...sdkRecord },
+      };
+    }
+
     const urlStr =
       typeof input === "string"
         ? input

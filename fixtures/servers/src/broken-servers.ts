@@ -222,6 +222,58 @@ export async function startOversizedResponseServer(): Promise<FixtureServer> {
   });
 }
 
+/**
+ * Server that requires a valid Bearer token on every request.
+ *
+ * Returns 401 when the token is absent or incorrect; behaves as a valid MCP
+ * server (with one tool) when the correct token is provided. Used to verify
+ * that the CLI and Action can authenticate against protected endpoints.
+ */
+export async function startAuthenticatedServer(
+  expectedToken: string,
+): Promise<FixtureServer> {
+  return startRawFixture(async (req, res) => {
+    const auth = req.headers["authorization"];
+    if (!auth || auth !== `Bearer ${expectedToken}`) {
+      res
+        .setHeader("WWW-Authenticate", 'Bearer realm="mcp"')
+        .status(401)
+        .json({ error: "unauthorized" });
+      return;
+    }
+    const body = req.body as { method?: string; id?: unknown };
+    if (body.method === "initialize") {
+      res.json({
+        jsonrpc: "2.0",
+        id: body.id,
+        result: {
+          protocolVersion: "2024-11-05",
+          capabilities: { tools: {} },
+          serverInfo: { name: "auth-server", version: "1.0.0" },
+        },
+      });
+    } else if (body.method === "tools/list") {
+      res.json({
+        jsonrpc: "2.0",
+        id: body.id,
+        result: {
+          tools: [
+            {
+              name: "secure_tool",
+              description: "A tool that requires authentication",
+              inputSchema: { type: "object", properties: {} },
+            },
+          ],
+        },
+      });
+    } else if (body.method === "notifications/initialized") {
+      res.status(202).json({});
+    } else {
+      res.json({ jsonrpc: "2.0", id: body.id, result: {} });
+    }
+  });
+}
+
 /** Server that always responds 401 with a configurable body. */
 export async function startUnauthorizedServer(body: string = '{"error":"unauthorized"}', contentType = "application/json"): Promise<FixtureServer> {
   return startRawFixture((_req, res) => {

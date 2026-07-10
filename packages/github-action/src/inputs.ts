@@ -1,9 +1,10 @@
 import * as core from "@actions/core";
-import { redactUrl } from "@mcp-release/core";
+import { redactUrl, buildRequestHeaders, HeaderValidationError } from "@mcp-release/core";
 
 export type ActionInputs = {
   endpoint: string;
   safeEndpoint: string;
+  requestHeaders: Record<string, string>;
   timeoutMs: number;
   failOn: "WARNING" | "FAIL";
   format: "json" | "markdown" | "both";
@@ -11,12 +12,22 @@ export type ActionInputs = {
   developmentMode: boolean;
 };
 
+/**
+ * Parse newline-separated values from a multi-line action input.
+ * Blank lines and lines containing only whitespace are ignored.
+ */
+function parseLines(raw: string): string[] {
+  return raw
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+}
+
 export function parseInputs(): ActionInputs {
   const rawEndpoint = core.getInput("endpoint", { required: true }).trim();
   if (rawEndpoint === "") {
     throw new Error("Input 'endpoint' must not be empty");
   }
-  // Validate the URL is parseable before proceeding
   try {
     new URL(rawEndpoint);
   } catch {
@@ -26,11 +37,55 @@ export function parseInputs(): ActionInputs {
   }
   const safeEndpoint = redactUrl(rawEndpoint);
 
+  // Auth inputs
+  const bearerTokenEnvName = core.getInput("bearer-token-env").trim() || undefined;
+  const headerLines = parseLines(core.getInput("header"));
+  const headerEnvLines = parseLines(core.getInput("header-env"));
+
+  // Mask raw bearer token before building headers (raw token is the secret, not "Bearer <token>")
+  if (bearerTokenEnvName !== undefined) {
+    const rawToken = process.env[bearerTokenEnvName];
+    if (rawToken !== undefined) {
+      core.setSecret(rawToken);
+    }
+  }
+
+  let requestHeaders: Record<string, string> = {};
+  if (headerLines.length > 0 || headerEnvLines.length > 0 || bearerTokenEnvName !== undefined) {
+    try {
+      requestHeaders = buildRequestHeaders(
+        headerLines,
+        headerEnvLines,
+        bearerTokenEnvName,
+        process.env as Record<string, string | undefined>,
+      );
+    } catch (err) {
+      if (err instanceof HeaderValidationError) {
+        throw new Error(`Auth input error: ${err.message}`);
+      }
+      throw err;
+    }
+    // Mask sensitive non-authorization header values in GitHub Actions logs
+    for (const [name, value] of Object.entries(requestHeaders)) {
+      const lower = name.toLowerCase();
+      if (
+        lower === "x-api-key" ||
+        lower === "cookie" ||
+        lower === "x-auth-token" ||
+        lower === "proxy-authorization" ||
+        lower === "x-secret" ||
+        lower === "x-token"
+      ) {
+        core.setSecret(value);
+      }
+    }
+  }
+
   const timeoutRaw = core.getInput("timeout-ms").trim() || "10000";
   const timeoutMs = parseInt(timeoutRaw, 10);
   if (Number.isNaN(timeoutMs) || timeoutMs <= 0 || timeoutMs > 300_000) {
     throw new Error(
-      `Input 'timeout-ms' must be a positive integer ≤ 300000, got: ${timeoutRaw}`,
+      `Input 'timeout-ms' must be a positive integer <=300000, got: ${timeoutRaw}`,
     );
   }
 
@@ -58,6 +113,7 @@ export function parseInputs(): ActionInputs {
   return {
     endpoint: rawEndpoint,
     safeEndpoint,
+    requestHeaders,
     timeoutMs,
     failOn,
     format,
