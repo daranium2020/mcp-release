@@ -1,4 +1,4 @@
-name: 'MCP Release — Release Checker'
+name: 'MCP Release - Release Checker'
 description: >
   Connects to a remote MCP server, validates tool definitions, and produces
   a structured report. Tools are never invoked.
@@ -7,6 +7,28 @@ inputs:
   endpoint:
     description: 'MCP server URL to validate (https:// required in production)'
     required: true
+  bearer-token-env:
+    description: >
+      Name of an environment variable that holds a Bearer token. The action reads
+      the variable value and adds Authorization: Bearer <token> to every request.
+      Set the variable in the env block of the job step using a GitHub secret.
+    required: false
+    default: ''
+  header:
+    description: >
+      Newline-separated additional request headers in "Name: value" format.
+      For non-secret headers only. Values written here appear in plaintext in
+      your workflow YAML. Use header-env or bearer-token-env for secrets.
+      Example: "X-Tenant-Id: acme\nX-Version: 2"
+    required: false
+    default: ''
+  header-env:
+    description: >
+      Newline-separated header/env-var pairs in "Name=ENV_VAR" format.
+      The action reads each variable and adds the corresponding header.
+      Example: "X-API-Key=MY_API_KEY\nX-Custom=MY_CUSTOM"
+    required: false
+    default: ''
   timeout-ms:
     description: 'Request timeout in milliseconds'
     required: false
@@ -31,6 +53,14 @@ inputs:
 outputs:
   status:
     description: 'Overall validation status: PASS, WARNING, or FAIL'
+  failures:
+    description: 'Number of FAIL findings'
+  warnings:
+    description: 'Number of WARNING findings'
+  tools:
+    description: 'Number of tools discovered'
+  report-path:
+    description: 'Absolute path to the written report file (if a single format was selected)'
   pass-count:
     description: 'Number of PASS findings'
   warning-count:

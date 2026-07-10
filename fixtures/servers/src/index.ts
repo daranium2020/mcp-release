@@ -10,6 +10,7 @@ export {
   startPrivateRedirectServer,
   startRedirectLoopServer,
   startOversizedResponseServer,
+  startAuthenticatedServer,
   startUnauthorizedServer,
   startForbiddenServer,
   startInternalErrorServer,

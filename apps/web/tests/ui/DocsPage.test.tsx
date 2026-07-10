@@ -20,6 +20,7 @@ describe("DocsPage: content", () => {
     expect(h2s.some((t) => t.includes("quick start"))).toBe(true);
     expect(h2s.some((t) => t.includes("security model"))).toBe(true);
     expect(h2s.some((t) => t.includes("known limitations"))).toBe(true);
+    expect(h2s.some((t) => t.includes("private and authenticated"))).toBe(true);
   });
 
   // ---- PASS / WARNING / FAIL ----
@@ -97,6 +98,28 @@ describe("DocsPage: content", () => {
     const { container } = render(<DocsPage />);
     const text = container.textContent?.toLowerCase() ?? "";
     expect(text).toContain("not saved");
+  });
+
+  // ---- Private and authenticated servers section ----
+
+  it("explains that the web checker does not accept credentials", () => {
+    const { container } = render(<DocsPage />);
+    const text = container.textContent ?? "";
+    expect(text).toContain("web checker");
+    expect(text.toLowerCase()).toMatch(/does not accept credentials|no credentials/);
+  });
+
+  it("mentions CLI and GitHub Action for private/authenticated servers", () => {
+    const { container } = render(<DocsPage />);
+    const text = container.textContent ?? "";
+    expect(text.toLowerCase()).toContain("cli");
+    expect(text.toLowerCase()).toContain("github action");
+  });
+
+  it("states that tools are never executed in the private/auth context", () => {
+    const { container } = render(<DocsPage />);
+    const text = container.textContent ?? "";
+    expect(text.toLowerCase()).toMatch(/never executes|never invok|not invok|not execut/);
   });
 
   // ---- No Unicode dash punctuation in rendered text ----

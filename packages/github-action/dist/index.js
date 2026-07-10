@@ -19673,10 +19673,10 @@ var require_core = __commonJS({
       (0, command_1.issueCommand)("set-env", { name }, convertedVal);
     }
     exports2.exportVariable = exportVariable;
-    function setSecret(secret) {
+    function setSecret2(secret) {
       (0, command_1.issueCommand)("add-mask", {}, secret);
     }
-    exports2.setSecret = setSecret;
+    exports2.setSecret = setSecret2;
     function addPath(inputPath) {
       const filePath = process.env["GITHUB_PATH"] || "";
       if (filePath) {
@@ -64732,7 +64732,7 @@ function isBlockedIp(ip) {
   return isBlockedIPv4(ip) || isBlockedIPv6(ip);
 }
 async function resolveUrlForPinning(rawUrl, opts = {}) {
-  const { allowHttp = false, dnsResolver = systemDnsResolver } = opts;
+  const { allowHttp = false, allowPrivateNetworks = false, dnsResolver = systemDnsResolver } = opts;
   let url2;
   try {
     url2 = new URL(rawUrl);
@@ -64763,7 +64763,7 @@ async function resolveUrlForPinning(rawUrl, opts = {}) {
     }
     const hostname2 = url2.hostname.toLowerCase();
     const isLocalhostLiteral = hostname2 === "localhost" || hostname2 === "127.0.0.1" || hostname2 === "::1";
-    if (!isLocalhostLiteral) {
+    if (!isLocalhostLiteral && !allowPrivateNetworks) {
       throw new SsrfError(
         `HTTP is only allowed for localhost in development/test mode. Got: ${hostname2}`,
         "HTTP_NON_LOCALHOST"
@@ -64771,12 +64771,12 @@ async function resolveUrlForPinning(rawUrl, opts = {}) {
     }
     return { hostname: hostname2, port, isHttps: false, resolvedIps: [] };
   }
-  const resolvedIps = await resolveAndCheckHost(url2.hostname, dnsResolver);
+  const resolvedIps = await resolveAndCheckHost(url2.hostname, dnsResolver, allowPrivateNetworks);
   return { hostname: url2.hostname, port, isHttps: true, resolvedIps };
 }
-async function resolveAndCheckHost(hostname2, dnsResolver) {
+async function resolveAndCheckHost(hostname2, dnsResolver, allowPrivateNetworks = false) {
   if (import_net2.default.isIP(hostname2) !== 0) {
-    if (isBlockedIp(hostname2)) {
+    if (!allowPrivateNetworks && isBlockedIp(hostname2)) {
       throw new SsrfError(`IP address is blocked: ${hostname2}`, "BLOCKED_IP");
     }
     return [hostname2];
@@ -64796,12 +64796,14 @@ async function resolveAndCheckHost(hostname2, dnsResolver) {
       "DNS_NO_RECORDS"
     );
   }
-  for (const record2 of records) {
-    if (isBlockedIp(record2.address)) {
-      throw new SsrfError(
-        `Resolved address is blocked: ${record2.address} (for ${hostname2})`,
-        "BLOCKED_RESOLVED_IP"
-      );
+  if (!allowPrivateNetworks) {
+    for (const record2 of records) {
+      if (isBlockedIp(record2.address)) {
+        throw new SsrfError(
+          `Resolved address is blocked: ${record2.address} (for ${hostname2})`,
+          "BLOCKED_RESOLVED_IP"
+        );
+      }
     }
   }
   return records.map((r) => r.address);
@@ -64910,6 +64912,7 @@ async function connectToMcpServer(serverUrl, opts = {}) {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxRedirects = opts.maxRedirects ?? MAX_REDIRECTS_DEFAULT;
   const ssrfOpts = opts.ssrf ?? {};
+  const requestHeaders = opts.requestHeaders ?? {};
   let resolvedUrl;
   try {
     resolvedUrl = await resolveUrlForPinning(serverUrl, ssrfOpts);
@@ -64937,7 +64940,23 @@ async function connectToMcpServer(serverUrl, opts = {}) {
     baseFetch = fetch;
   }
   let redirectCount = 0;
-  const fetchChain = async (input, init2, chainVisited) => {
+  const fetchChain = async (input, rawInit, chainVisited, activeRequestHeaders = requestHeaders) => {
+    let init2 = rawInit;
+    if (Object.keys(activeRequestHeaders).length > 0) {
+      const sdkHeaders = rawInit?.headers;
+      const sdkRecord = {};
+      if (sdkHeaders instanceof Headers) {
+        sdkHeaders.forEach((v, k) => {
+          sdkRecord[k] = v;
+        });
+      } else if (sdkHeaders && typeof sdkHeaders === "object" && !Array.isArray(sdkHeaders)) {
+        Object.assign(sdkRecord, sdkHeaders);
+      }
+      init2 = {
+        ...rawInit,
+        headers: { ...activeRequestHeaders, ...sdkRecord }
+      };
+    }
     const urlStr = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     if (chainVisited.has(urlStr)) {
       throw new TransportError(
@@ -64996,12 +65015,13 @@ async function connectToMcpServer(serverUrl, opts = {}) {
       }
       const origOrigin = new URL(urlStr).origin;
       const destOrigin = new URL(resolved).origin;
+      const isCrossOrigin = origOrigin !== destOrigin;
       let redirectInit = {
         ...init2,
         redirect: "manual",
         signal: mergedSignal
       };
-      if (origOrigin !== destOrigin) {
+      if (isCrossOrigin) {
         const existingHdrs = redirectInit.headers;
         const safeHeaders = {};
         if (existingHdrs && typeof existingHdrs === "object" && !Array.isArray(existingHdrs)) {
@@ -65014,7 +65034,7 @@ async function connectToMcpServer(serverUrl, opts = {}) {
         }
         redirectInit = { ...redirectInit, headers: safeHeaders };
       }
-      return fetchChain(resolved, redirectInit, chainVisited);
+      return fetchChain(resolved, redirectInit, chainVisited, isCrossOrigin ? {} : activeRequestHeaders);
     }
     const contentLength = response.headers.get("content-length");
     if (contentLength !== null && parseInt(contentLength, 10) > MAX_RESPONSE_SIZE_BYTES) {
@@ -65024,7 +65044,7 @@ async function connectToMcpServer(serverUrl, opts = {}) {
     }
     return response;
   };
-  const fetchWithGuard = (input, init2) => fetchChain(input, init2, /* @__PURE__ */ new Set());
+  const fetchWithGuard = (input, init2) => fetchChain(input, init2, /* @__PURE__ */ new Set(), requestHeaders);
   const startMs = Date.now();
   const url2 = new URL(serverUrl);
   const transport = new StreamableHTTPClientTransport(url2, {
@@ -65334,12 +65354,16 @@ async function runCheck(serverUrl, opts = {}) {
   const startMs = Date.now();
   const safeUrl = redactUrl(serverUrl);
   const findings = [];
-  const ssrfOpts = { allowHttp: opts.allowHttp ?? false };
+  const ssrfOpts = {
+    allowHttp: opts.allowHttp ?? false,
+    allowPrivateNetworks: opts.allowPrivateNetworks ?? false
+  };
   let connectResult = null;
   try {
     const connectOpts = { ssrf: ssrfOpts };
     if (opts.timeoutMs !== void 0) connectOpts.timeoutMs = opts.timeoutMs;
     if (opts.maxRedirects !== void 0) connectOpts.maxRedirects = opts.maxRedirects;
+    if (opts.requestHeaders !== void 0) connectOpts.requestHeaders = opts.requestHeaders;
     connectResult = await connectToMcpServer(serverUrl, connectOpts);
   } catch (err) {
     const durationMs2 = Date.now() - startMs;
@@ -65483,6 +65507,93 @@ async function runCheck(serverUrl, opts = {}) {
     findings,
     tools: toolReports
   };
+}
+var HTTP_TOKEN_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+var HeaderValidationError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "HeaderValidationError";
+  }
+};
+function validateHeaderName(name) {
+  if (name === "") {
+    throw new HeaderValidationError("Header name must not be empty");
+  }
+  if (!HTTP_TOKEN_RE.test(name)) {
+    throw new HeaderValidationError(
+      `Invalid header name "${name}": must be a valid HTTP token (RFC 7230)`
+    );
+  }
+}
+function validateHeaderValue(name, value) {
+  if (/[\r\n]/.test(value)) {
+    throw new HeaderValidationError(
+      `Header "${name}" value must not contain CR (\\r) or LF (\\n)`
+    );
+  }
+}
+function parseHeaderLiteralFlag(flag) {
+  const colonIdx = flag.indexOf(":");
+  if (colonIdx < 1) {
+    throw new HeaderValidationError(
+      `Invalid --header value: "${flag}" (expected "Name: value")`
+    );
+  }
+  const name = flag.slice(0, colonIdx).trim();
+  const value = flag.slice(colonIdx + 1).trim();
+  validateHeaderName(name);
+  validateHeaderValue(name, value);
+  return [name, value];
+}
+function parseHeaderEnvFlag(flag, env) {
+  const eqIdx = flag.indexOf("=");
+  if (eqIdx < 1) {
+    throw new HeaderValidationError(
+      `Invalid --header-env value: "${flag}" (expected "Name=ENV_VAR")`
+    );
+  }
+  const name = flag.slice(0, eqIdx).trim();
+  const varName = flag.slice(eqIdx + 1).trim();
+  validateHeaderName(name);
+  if (varName === "") {
+    throw new HeaderValidationError(
+      `Invalid --header-env value: "${flag}": environment variable name must not be empty`
+    );
+  }
+  const value = env[varName];
+  if (value === void 0) {
+    throw new HeaderValidationError(
+      `Environment variable "${varName}" (for header "${name}") is not set`
+    );
+  }
+  validateHeaderValue(name, value);
+  return [name, value];
+}
+function buildRequestHeaders(headerLiterals, headerEnvFlags, bearerTokenEnv, env) {
+  const headers = {};
+  for (const flag of headerLiterals) {
+    const [name, value] = parseHeaderLiteralFlag(flag);
+    headers[name] = value;
+  }
+  for (const flag of headerEnvFlags) {
+    const [name, value] = parseHeaderEnvFlag(flag, env);
+    headers[name] = value;
+  }
+  if (bearerTokenEnv !== void 0) {
+    const token = env[bearerTokenEnv];
+    if (token === void 0) {
+      throw new HeaderValidationError(
+        `Environment variable "${bearerTokenEnv}" (for --bearer-token-env) is not set`
+      );
+    }
+    if (/[\r\n]/.test(token)) {
+      throw new HeaderValidationError(
+        `Bearer token from "${bearerTokenEnv}" must not contain CR or LF`
+      );
+    }
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  return headers;
 }
 
 // ../../node_modules/.pnpm/kleur@4.1.5/node_modules/kleur/index.mjs
@@ -65634,6 +65745,9 @@ var import_node_path = __toESM(require("path"), 1);
 
 // src/inputs.ts
 var core = __toESM(require_core(), 1);
+function parseLines(raw) {
+  return raw.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+}
 function parseInputs() {
   const rawEndpoint = core.getInput("endpoint", { required: true }).trim();
   if (rawEndpoint === "") {
@@ -65647,11 +65761,45 @@ function parseInputs() {
     );
   }
   const safeEndpoint = redactUrl(rawEndpoint);
+  const bearerTokenEnvName = core.getInput("bearer-token-env").trim() || void 0;
+  const headerLines = parseLines(core.getInput("header"));
+  const headerEnvLines = parseLines(core.getInput("header-env"));
+  if (bearerTokenEnvName !== void 0) {
+    const rawToken = process.env[bearerTokenEnvName];
+    if (rawToken !== void 0) {
+      core.setSecret(rawToken);
+    }
+  }
+  let requestHeaders = {};
+  if (headerLines.length > 0 || headerEnvLines.length > 0 || bearerTokenEnvName !== void 0) {
+    try {
+      requestHeaders = buildRequestHeaders(
+        headerLines,
+        headerEnvLines,
+        bearerTokenEnvName,
+        process.env
+      );
+    } catch (err) {
+      if (err instanceof HeaderValidationError) {
+        throw new Error(`Auth input error: ${err.message}`);
+      }
+      throw err;
+    }
+    for (const [name, value] of Object.entries(requestHeaders)) {
+      const lower = name.toLowerCase();
+      if (lower === "authorization" || lower === "x-api-key" || lower === "cookie" || lower === "x-auth-token" || lower === "proxy-authorization" || lower === "x-secret" || lower === "x-token") {
+        core.setSecret(value);
+        if (lower === "authorization" && value.startsWith("Bearer ")) {
+          core.setSecret(value.slice("Bearer ".length));
+        }
+      }
+    }
+  }
   const timeoutRaw = core.getInput("timeout-ms").trim() || "10000";
   const timeoutMs = parseInt(timeoutRaw, 10);
   if (Number.isNaN(timeoutMs) || timeoutMs <= 0 || timeoutMs > 3e5) {
     throw new Error(
-      `Input 'timeout-ms' must be a positive integer \u2264 300000, got: ${timeoutRaw}`
+      `Input 'timeout-ms' must be a positive integer <=300000, got: ${timeoutRaw}`
     );
   }
   const failOnRaw = (core.getInput("fail-on").trim() || "fail").toLowerCase();
@@ -65674,6 +65822,7 @@ function parseInputs() {
   return {
     endpoint: rawEndpoint,
     safeEndpoint,
+    requestHeaders,
     timeoutMs,
     failOn,
     format,
@@ -65718,11 +65867,16 @@ async function main() {
   const inputs = parseInputs();
   core4.info(`Checking MCP server: ${inputs.safeEndpoint}`);
   if (inputs.developmentMode) {
-    core4.warning("development-mode is enabled \u2014 HTTP connections are allowed. Do not use in production.");
+    core4.warning("development-mode is enabled - HTTP connections are allowed. Do not use in production.");
+  }
+  if (Object.keys(inputs.requestHeaders).length > 0) {
+    const headerNames = Object.keys(inputs.requestHeaders).join(", ");
+    core4.info(`Using request headers: ${headerNames} (values masked)`);
   }
   const report = await runCheck(inputs.endpoint, {
     timeoutMs: inputs.timeoutMs,
-    allowHttp: inputs.developmentMode
+    allowHttp: inputs.developmentMode,
+    ...Object.keys(inputs.requestHeaders).length > 0 ? { requestHeaders: inputs.requestHeaders } : {}
   });
   const allFindings = [
     ...report.findings,
@@ -65731,17 +65885,23 @@ async function main() {
   const passCount = allFindings.filter((f) => f.severity === "PASS").length;
   const warnCount = allFindings.filter((f) => f.severity === "WARNING").length;
   const failCount = allFindings.filter((f) => f.severity === "FAIL").length;
+  const toolCount = report.tools.length;
   core4.setOutput("status", report.overallStatus);
+  core4.setOutput("failures", String(failCount));
+  core4.setOutput("warnings", String(warnCount));
+  core4.setOutput("tools", String(toolCount));
   core4.setOutput("pass-count", String(passCount));
   core4.setOutput("warning-count", String(warnCount));
   core4.setOutput("fail-count", String(failCount));
   const outDir = inputs.outputDirectory !== "" ? import_node_path.default.resolve(inputs.outputDirectory) : process.env["RUNNER_TEMP"] ?? "/tmp";
+  let singleReportPath;
   if (inputs.format === "json" || inputs.format === "both") {
     (0, import_node_fs.mkdirSync)(outDir, { recursive: true });
     const jsonPath = import_node_path.default.join(outDir, "mcp-release-report.json");
     (0, import_node_fs.writeFileSync)(jsonPath, toJson(report), "utf8");
     core4.setOutput("report-json", jsonPath);
     core4.info(`JSON report written to: ${jsonPath}`);
+    if (inputs.format === "json") singleReportPath = jsonPath;
   }
   if (inputs.format === "markdown" || inputs.format === "both") {
     (0, import_node_fs.mkdirSync)(outDir, { recursive: true });
@@ -65749,6 +65909,10 @@ async function main() {
     (0, import_node_fs.writeFileSync)(mdPath, toMarkdown(report), "utf8");
     core4.setOutput("report-markdown", mdPath);
     core4.info(`Markdown report written to: ${mdPath}`);
+    if (inputs.format === "markdown") singleReportPath = mdPath;
+  }
+  if (singleReportPath !== void 0) {
+    core4.setOutput("report-path", singleReportPath);
   }
   await writeJobSummary(report);
   emitAnnotations(report.findings);
@@ -65759,7 +65923,7 @@ async function main() {
   const actual = STATUS_ORDER[report.overallStatus] ?? 0;
   if (actual >= threshold) {
     core4.setFailed(
-      `MCP server validation result: ${report.overallStatus} \u2014 see findings above`
+      `MCP server validation result: ${report.overallStatus} - see findings above`
     );
   } else {
     core4.info(`MCP server validation result: ${report.overallStatus}`);

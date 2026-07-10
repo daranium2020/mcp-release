@@ -26,3 +26,11 @@ export { describeTransportError, type TransportDiagnostic } from "./diagnostics.
 export { redactUrl, redactHeaders, redactString, redactErrorMessage } from "./redact.js";
 export { validateJsonSchema } from "./schema-validator.js";
 export { validateTool, validateTools } from "./validator.js";
+export {
+  validateHeaderName,
+  validateHeaderValue,
+  parseHeaderLiteralFlag,
+  parseHeaderEnvFlag,
+  buildRequestHeaders,
+  HeaderValidationError,
+} from "./headers.js";

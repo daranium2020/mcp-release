@@ -5,6 +5,7 @@ vi.mock("@actions/core", () => ({
   getInput: vi.fn(),
   setOutput: vi.fn(),
   setFailed: vi.fn(),
+  setSecret: vi.fn(),
   info: vi.fn(),
   warning: vi.fn(),
   error: vi.fn(),
@@ -24,6 +25,9 @@ function setInputs(inputs: Record<string, string>): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Unset any environment variables that might affect tests
+  delete process.env["TEST_TOKEN"];
+  delete process.env["TEST_API_KEY"];
 });
 
 describe("parseInputs", () => {
@@ -36,9 +40,10 @@ describe("parseInputs", () => {
     expect(inputs.format).toBe("markdown");
     expect(inputs.outputDirectory).toBe("");
     expect(inputs.developmentMode).toBe(false);
+    expect(inputs.requestHeaders).toEqual({});
   });
 
-  it("parses all inputs explicitly", () => {
+  it("parses all non-auth inputs explicitly", () => {
     setInputs({
       endpoint: "https://my-server.example.com/mcp",
       "timeout-ms": "5000",
@@ -101,5 +106,183 @@ describe("parseInputs", () => {
     const inputs = parseInputs();
     expect(inputs.failOn).toBe("WARNING");
     expect(inputs.format).toBe("json");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Auth input parsing
+// ---------------------------------------------------------------------------
+
+describe("parseInputs — bearer-token-env", () => {
+  it("builds Authorization header from env var", () => {
+    process.env["TEST_TOKEN"] = "secret-bearer-token";
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      "bearer-token-env": "TEST_TOKEN",
+    });
+    const inputs = parseInputs();
+    expect(inputs.requestHeaders["Authorization"]).toBe("Bearer secret-bearer-token");
+    delete process.env["TEST_TOKEN"];
+  });
+
+  it("throws when the referenced env var is not set", () => {
+    delete process.env["MISSING_VAR"];
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      "bearer-token-env": "MISSING_VAR",
+    });
+    expect(() => parseInputs()).toThrow(/MISSING_VAR/);
+  });
+
+  it("calls core.setSecret for the bearer token value", () => {
+    process.env["TEST_TOKEN"] = "my-secret-value";
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      "bearer-token-env": "TEST_TOKEN",
+    });
+    parseInputs();
+    expect(core.setSecret).toHaveBeenCalledWith("my-secret-value");
+    delete process.env["TEST_TOKEN"];
+  });
+});
+
+describe("parseInputs — header (literal)", () => {
+  it("parses newline-separated literal headers", () => {
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      header: "X-Tenant: acme\nX-Version: 2",
+    });
+    const inputs = parseInputs();
+    expect(inputs.requestHeaders["X-Tenant"]).toBe("acme");
+    expect(inputs.requestHeaders["X-Version"]).toBe("2");
+  });
+
+  it("ignores blank lines in header input", () => {
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      header: "\nX-Tenant: acme\n\n",
+    });
+    const inputs = parseInputs();
+    expect(inputs.requestHeaders["X-Tenant"]).toBe("acme");
+    expect(Object.keys(inputs.requestHeaders)).toHaveLength(1);
+  });
+
+  it("throws on invalid header name in literal", () => {
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      header: "Bad Name: value",
+    });
+    expect(() => parseInputs()).toThrow();
+  });
+});
+
+describe("parseInputs — header-env", () => {
+  it("reads header value from environment variable", () => {
+    process.env["TEST_API_KEY"] = "api-key-value-123";
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      "header-env": "X-API-Key=TEST_API_KEY",
+    });
+    const inputs = parseInputs();
+    expect(inputs.requestHeaders["X-API-Key"]).toBe("api-key-value-123");
+    delete process.env["TEST_API_KEY"];
+  });
+
+  it("calls core.setSecret for sensitive header values from env", () => {
+    process.env["TEST_API_KEY"] = "sensitive-api-key";
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      "header-env": "X-API-Key=TEST_API_KEY",
+    });
+    parseInputs();
+    expect(core.setSecret).toHaveBeenCalledWith("sensitive-api-key");
+    delete process.env["TEST_API_KEY"];
+  });
+
+  it("throws when the referenced env var is not set", () => {
+    delete process.env["MISSING_VAR"];
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      "header-env": "X-Custom=MISSING_VAR",
+    });
+    expect(() => parseInputs()).toThrow(/MISSING_VAR/);
+  });
+});
+
+describe("parseInputs — Authorization masking", () => {
+  it("masks the full Authorization header value (Bearer prefix included)", () => {
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      header: "Authorization: Bearer literal-secret",
+    });
+    parseInputs();
+    expect(core.setSecret).toHaveBeenCalledWith("Bearer literal-secret");
+  });
+
+  it("also masks the bare token when value starts with 'Bearer '", () => {
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      header: "Authorization: Bearer bare-token-part",
+    });
+    parseInputs();
+    expect(core.setSecret).toHaveBeenCalledWith("bare-token-part");
+  });
+
+  it("masks Cookie header value", () => {
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      header: "Cookie: session=supersecret",
+    });
+    parseInputs();
+    expect(core.setSecret).toHaveBeenCalledWith("session=supersecret");
+  });
+
+  it("masks X-API-Key header value", () => {
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      header: "X-API-Key: sk-secret-key",
+    });
+    parseInputs();
+    expect(core.setSecret).toHaveBeenCalledWith("sk-secret-key");
+  });
+
+  it("header-env path: Authorization value is masked", () => {
+    process.env["AUTH_VAL"] = "Bearer env-secret";
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      "header-env": "Authorization=AUTH_VAL",
+    });
+    parseInputs();
+    expect(core.setSecret).toHaveBeenCalledWith("Bearer env-secret");
+    expect(core.setSecret).toHaveBeenCalledWith("env-secret");
+    delete process.env["AUTH_VAL"];
+  });
+
+  it("bearer-token-env path: raw token is masked (existing behaviour preserved)", () => {
+    process.env["MY_TOKEN"] = "bearer-env-raw-token";
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      "bearer-token-env": "MY_TOKEN",
+    });
+    parseInputs();
+    // Raw token masked before buildRequestHeaders (existing behaviour)
+    expect(core.setSecret).toHaveBeenCalledWith("bearer-env-raw-token");
+    delete process.env["MY_TOKEN"];
+  });
+});
+
+describe("parseInputs — no secret values in error messages", () => {
+  it("error for missing env var does not expose other env var values", () => {
+    process.env["OTHER_SECRET"] = "ultra-secret";
+    setInputs({
+      endpoint: "https://example.com/mcp",
+      "bearer-token-env": "DEFINITELY_NOT_SET",
+    });
+    try {
+      parseInputs();
+    } catch (err) {
+      expect((err as Error).message).not.toContain("ultra-secret");
+    }
+    delete process.env["OTHER_SECRET"];
   });
 });

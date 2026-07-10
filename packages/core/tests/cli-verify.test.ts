@@ -24,7 +24,7 @@ describe("CLI — valid fixture", () => {
   afterAll(async () => server.close());
 
   it("exits 0 and reports PASS", async () => {
-    const { stdout, code } = await runCli(["check", server.url, "--env", "development", "--output", "json"]);
+    const { stdout, code } = await runCli(["check", server.url, "--allow-http", "--json"]);
     const report = JSON.parse(stdout) as { overallStatus: string; tools: unknown[]; findings: Array<{ code: string }> };
     expect(code).toBe(0);
     expect(report.overallStatus).toBe("PASS");
@@ -34,7 +34,7 @@ describe("CLI — valid fixture", () => {
   }, 15000);
 
   it("never invokes tools (no callTool in output)", async () => {
-    const { stdout } = await runCli(["check", server.url, "--env", "development", "--output", "json"]);
+    const { stdout } = await runCli(["check", server.url, "--allow-http", "--json"]);
     expect(stdout).not.toContain("callTool");
     expect(stdout).not.toContain("tools/call");
     expect(stdout).not.toContain("TOOL_CALLED");
@@ -47,7 +47,7 @@ describe("CLI — invalid input schema fixture", () => {
   afterAll(async () => server.close());
 
   it("exits 1 and reports FAIL", async () => {
-    const { stdout, code } = await runCli(["check", server.url, "--env", "development", "--output", "json"]);
+    const { stdout, code } = await runCli(["check", server.url, "--allow-http", "--json"]);
     const report = JSON.parse(stdout) as { overallStatus: string; findings: Array<{ code: string }> };
     expect(code).toBe(1);
     expect(report.overallStatus).toBe("FAIL");
@@ -64,9 +64,9 @@ describe("CLI — timeout fixture", () => {
   it("exits 1 and reports FAIL with timeout finding", async () => {
     const { stdout, code } = await runCli([
       "check", server.url,
-      "--env", "development",
-      "--output", "json",
-      "--timeout", "800",
+      "--allow-http",
+      "--json",
+      "--timeout-ms", "800",
     ]);
     const report = JSON.parse(stdout) as { overallStatus: string; findings: Array<{ code: string }> };
     expect(code).toBe(1);

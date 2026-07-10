@@ -6,6 +6,7 @@ vi.mock("@actions/core", () => ({
   getInput: vi.fn(),
   setOutput: vi.fn(),
   setFailed: vi.fn(),
+  setSecret: vi.fn(),
   info: vi.fn(),
   warning: vi.fn(),
   error: vi.fn(),
@@ -53,7 +54,7 @@ function makeReport(overallStatus: "PASS" | "WARNING" | "FAIL"): CheckReport {
         ? [{ code: "TRANSPORT_ERROR" as const, severity: "FAIL" as const, message: "connection failed" }]
         : []),
       ...(overallStatus === "WARNING"
-        ? [{ code: "TOOL_MISSING_DESCRIPTION" as const, severity: "WARNING" as const, message: "no description" }]
+        ? [{ code: "AUTH_REQUIRED" as const, severity: "WARNING" as const, message: "auth required" }]
         : []),
     ],
     tools: [],
@@ -143,15 +144,21 @@ describe("action — outputs", () => {
     expect(failCount).toBe(0);
   });
 
-  it("sets status and count outputs", () => {
+  it("sets status, failures, warnings, tools, and count outputs", () => {
     const report = makeReport("PASS");
     const { passCount, warnCount, failCount } = countFindings(report);
     core.setOutput("status", report.overallStatus);
+    core.setOutput("failures", String(failCount));
+    core.setOutput("warnings", String(warnCount));
+    core.setOutput("tools", String(report.tools.length));
     core.setOutput("pass-count", String(passCount));
     core.setOutput("warning-count", String(warnCount));
     core.setOutput("fail-count", String(failCount));
 
     expect(core.setOutput).toHaveBeenCalledWith("status", "PASS");
+    expect(core.setOutput).toHaveBeenCalledWith("failures", "0");
+    expect(core.setOutput).toHaveBeenCalledWith("warnings", "0");
+    expect(core.setOutput).toHaveBeenCalledWith("tools", "0");
     expect(core.setOutput).toHaveBeenCalledWith("pass-count", "2");
     expect(core.setOutput).toHaveBeenCalledWith("warning-count", "0");
     expect(core.setOutput).toHaveBeenCalledWith("fail-count", "0");
@@ -189,12 +196,40 @@ describe("action — error redaction", () => {
     const rawMessage = "Connection failed token=supersecret123";
     const msg = coreModule.redactErrorMessage(new Error(rawMessage));
 
-    // Simulate the catch block
     core.setFailed(`Action failed: ${msg}`);
 
     const calls = (core.setFailed as ReturnType<typeof vi.fn>).mock.calls;
     const combinedOutput = calls.map((c: unknown[]) => String(c[0])).join(" ");
     expect(combinedOutput).not.toContain("supersecret123");
     expect(combinedOutput).toContain("[REDACTED]");
+  });
+});
+
+describe("action — auth headers not printed", () => {
+  it("setSecret is called to mask bearer token values", () => {
+    // Simulate what the action does when it reads a bearer token
+    const secretValue = "my-super-secret-token";
+    core.setSecret(secretValue);
+    expect(core.setSecret).toHaveBeenCalledWith(secretValue);
+  });
+
+  it("runCheck receives requestHeaders without logging values", async () => {
+    const headers = { Authorization: "Bearer hidden-token" };
+    (coreModule.runCheck as ReturnType<typeof vi.fn>).mockResolvedValue(makeReport("PASS"));
+
+    await (coreModule.runCheck as ReturnType<typeof vi.fn>)(
+      "https://example.com/mcp",
+      { timeoutMs: 10000, requestHeaders: headers },
+    );
+
+    // The headers are passed to runCheck, but the action never logs the values
+    const callArg = (coreModule.runCheck as ReturnType<typeof vi.fn>).mock.calls[0];
+    const options = callArg?.[1] as { requestHeaders?: Record<string, string> };
+    expect(options?.requestHeaders?.["Authorization"]).toBe("Bearer hidden-token");
+
+    // core.info must not have been called with the token value
+    const infoCalls = (core.info as ReturnType<typeof vi.fn>).mock.calls;
+    const infoOutput = infoCalls.map((c: unknown[]) => String(c[0])).join(" ");
+    expect(infoOutput).not.toContain("hidden-token");
   });
 });

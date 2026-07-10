@@ -47,6 +47,15 @@ export type ConnectOptions = {
   timeoutMs?: number;
   maxRedirects?: number;
   ssrf?: SsrfOptions;
+  /**
+   * Additional HTTP request headers sent with every MCP request.
+   * Used by the CLI and GitHub Action for authentication (Authorization,
+   * X-API-Key, etc.). The web API never sets this.
+   *
+   * Sensitive headers are dropped on cross-origin redirects by the existing
+   * redirect-handling logic in fetchChain.
+   */
+  requestHeaders?: Record<string, string>;
 };
 
 export type ConnectResult = {
@@ -205,6 +214,7 @@ export async function connectToMcpServer(
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxRedirects = opts.maxRedirects ?? MAX_REDIRECTS_DEFAULT;
   const ssrfOpts = opts.ssrf ?? {};
+  const requestHeaders = opts.requestHeaders ?? {};
 
   // Resolve DNS and validate URL — returns pinned IPs for HTTPS
   let resolvedUrl: Awaited<ReturnType<typeof resolveUrlForPinning>>;
@@ -248,9 +258,29 @@ export async function connectToMcpServer(
   // Redirect chains within a single request share the same Set to detect loops.
   const fetchChain = async (
     input: Parameters<typeof fetch>[0],
-    init: Parameters<typeof fetch>[1],
+    rawInit: Parameters<typeof fetch>[1],
     chainVisited: Set<string>,
+    activeRequestHeaders: Record<string, string> = requestHeaders,
   ): Promise<Response> => {
+    // Merge caller-supplied request headers (e.g., Authorization) into every
+    // request. SDK protocol headers take precedence on any name conflict.
+    // activeRequestHeaders is {} after a cross-origin redirect so stripped
+    // headers are not re-injected from the outer closure on subsequent hops.
+    let init = rawInit;
+    if (Object.keys(activeRequestHeaders).length > 0) {
+      const sdkHeaders = rawInit?.headers;
+      const sdkRecord: Record<string, string> = {};
+      if (sdkHeaders instanceof Headers) {
+        sdkHeaders.forEach((v, k) => { sdkRecord[k] = v; });
+      } else if (sdkHeaders && typeof sdkHeaders === "object" && !Array.isArray(sdkHeaders)) {
+        Object.assign(sdkRecord, sdkHeaders as Record<string, string>);
+      }
+      init = {
+        ...rawInit,
+        headers: { ...activeRequestHeaders, ...sdkRecord },
+      };
+    }
+
     const urlStr =
       typeof input === "string"
         ? input
@@ -333,12 +363,13 @@ export async function connectToMcpServer(
       // Drop sensitive headers when crossing origins
       const origOrigin = new URL(urlStr).origin;
       const destOrigin = new URL(resolved).origin;
+      const isCrossOrigin = origOrigin !== destOrigin;
       let redirectInit: RequestInit = {
         ...init,
         redirect: "manual",
         signal: mergedSignal,
       };
-      if (origOrigin !== destOrigin) {
+      if (isCrossOrigin) {
         const existingHdrs = redirectInit.headers;
         const safeHeaders: Record<string, string> = {};
         if (existingHdrs && typeof existingHdrs === "object" && !Array.isArray(existingHdrs)) {
@@ -362,7 +393,7 @@ export async function connectToMcpServer(
         redirectInit = { ...redirectInit, headers: safeHeaders };
       }
 
-      return fetchChain(resolved, redirectInit, chainVisited);
+      return fetchChain(resolved, redirectInit, chainVisited, isCrossOrigin ? {} : activeRequestHeaders);
     }
 
     // Enforce response-size limit via Content-Length header
@@ -380,8 +411,10 @@ export async function connectToMcpServer(
   };
 
   // Each top-level SDK request starts a fresh per-chain visited set.
+  // Pass requestHeaders explicitly so the default parameter is never relied upon
+  // (the closure value is correct, but explicit is clearer and avoids confusion).
   const fetchWithGuard: typeof fetch = (input, init) =>
-    fetchChain(input, init, new Set());
+    fetchChain(input, init, new Set(), requestHeaders);
 
   const startMs = Date.now();
   const url = new URL(serverUrl);

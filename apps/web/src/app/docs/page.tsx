@@ -190,15 +190,80 @@ export default function DocsPage() {
             </p>
             <p>
               This is expected for servers that require authentication. It is
-              not a failure of the server. It is a limitation of MCP Release:
-              no credentials are accepted or stored, so authenticated checks
-              cannot be performed.
+              not a failure of the server. It is a limitation of the web
+              checker: no credentials are accepted or stored, so authenticated
+              checks cannot be performed here.
             </p>
             <p>
               The overall result will be <strong>WARNING</strong>, not PASS.
               Subsequent checks (tool schema validation, etc.) are not
               performed.
             </p>
+          </section>
+
+          {/* Private and authenticated servers */}
+          <section aria-labelledby="private-auth-heading">
+            <h2 id="private-auth-heading" className={styles.h2}>
+              Private and authenticated servers
+            </h2>
+            <p>
+              The web checker at{" "}
+              <a
+                href="https://mcprelease.dev"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                mcprelease.dev
+              </a>{" "}
+              supports public HTTPS endpoints only. It does not accept
+              credentials of any kind, and it cannot reach private networks or
+              localhost. If your server returns{" "}
+              <code className={styles.code}>AUTH_REQUIRED</code>, the web
+              checker cannot validate it further.
+            </p>
+            <p>
+              For private, staging, localhost, or authenticated MCP endpoints,
+              use the <strong>CLI</strong> or{" "}
+              <strong>GitHub Action</strong>. Both run in your own environment
+              so credentials never leave your machine or CI secrets store.
+            </p>
+            <h3 className={styles.h3}>CLI</h3>
+            <pre className={styles.pre}>
+              <code>{`# Bearer token from an environment variable (recommended for secrets)
+MCP_TOKEN=your-token mcp-release check https://staging.example.com/mcp \\
+  --bearer-token-env MCP_TOKEN
+
+# Literal header (for non-secret values)
+mcp-release check https://staging.example.com/mcp \\
+  --header "X-Tenant-Id: acme"
+
+# Localhost or private network endpoint
+mcp-release check http://localhost:4000/mcp --allow-http`}</code>
+            </pre>
+            <h3 className={styles.h3}>GitHub Action</h3>
+            <pre className={styles.pre}>
+              <code>{`- name: Validate MCP server
+  uses: daranium2020/mcp-release@main
+  with:
+    endpoint: https://staging.example.com/mcp
+    bearer-token-env: MCP_TOKEN
+  env:
+    MCP_TOKEN: \${{ secrets.MCP_TOKEN }}`}</code>
+            </pre>
+            <ul className={styles.ul}>
+              <li>
+                Credentials stay in your local environment or CI secrets.
+                They are not sent to the web app or stored anywhere.
+              </li>
+              <li>
+                MCP Release still discovers tools but never executes them.
+                No tool arguments are constructed or sent.
+              </li>
+              <li>
+                A PASS result does not guarantee security or correctness. It
+                reflects the checks MCP Release ran.
+              </li>
+            </ul>
           </section>
 
           {/* Security model */}
