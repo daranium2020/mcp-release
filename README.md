@@ -24,43 +24,51 @@ To try without a real server, paste `https://mcp-release-fixture.vercel.app/mcp`
 
 The CLI runs on your machine and supports public, private, localhost, and authenticated MCP endpoints. Credentials stay in your environment and are never stored.
 
-```bash
-# Build first
-pnpm build
+The web checker at https://mcprelease.dev only accepts public HTTPS endpoints without credentials. Use the CLI or GitHub Action for private networks, localhost, staging servers, or any endpoint that requires authentication.
 
+```bash
+# Install globally (once published to npm)
+npm install -g @mcp-release/cli
+
+# Or run directly without installing
+npx @mcp-release/cli check https://your-mcp-server.example.com/mcp
+```
+
+```bash
 # Public endpoint
-node packages/cli/dist/index.js check https://your-mcp-server.example.com/mcp
+mcp-release check https://your-mcp-server.example.com/mcp
 
 # JSON output
-node packages/cli/dist/index.js check https://example.com/mcp --json
+mcp-release check https://example.com/mcp --json
 
 # Markdown output
-node packages/cli/dist/index.js check https://example.com/mcp --markdown
+mcp-release check https://example.com/mcp --markdown
 
 # Write report to file
-node packages/cli/dist/index.js check https://example.com/mcp --json --out report.json
+mcp-release check https://example.com/mcp --json --out report.json
 
 # Bearer token from environment variable (recommended for secrets)
-MCP_TOKEN=your-token \
-  node packages/cli/dist/index.js check https://staging.example.com/mcp \
-  --bearer-token-env MCP_TOKEN
+MCP_TOKEN=your-token mcp-release check https://staging.example.com/mcp --bearer-token-env MCP_TOKEN
 
-# Literal header (for non-secret values)
-node packages/cli/dist/index.js check https://staging.example.com/mcp \
-  --header "X-Tenant-Id: acme"
+# Literal header (for non-secret values only)
+mcp-release check https://staging.example.com/mcp --header "X-Tenant-Id: acme"
 
 # Header value from environment variable
-MY_KEY=secret \
-  node packages/cli/dist/index.js check https://staging.example.com/mcp \
-  --header-env "X-API-Key=MY_KEY"
+MY_KEY=secret mcp-release check https://staging.example.com/mcp --header-env "X-API-Key=MY_KEY"
 
 # Localhost or private network endpoint
-node packages/cli/dist/index.js check http://localhost:4000/mcp --allow-http
+mcp-release check http://localhost:4000/mcp --allow-http
 
 # Exit 4 on WARNING (e.g., AUTH_REQUIRED)
-node packages/cli/dist/index.js check https://staging.example.com/mcp \
-  --bearer-token-env MCP_TOKEN \
-  --fail-on-warning
+MCP_TOKEN=your-token mcp-release check https://staging.example.com/mcp \
+  --bearer-token-env MCP_TOKEN --fail-on-warning
+```
+
+**From this repo (without installing):**
+
+```bash
+pnpm build
+node packages/cli/dist/index.js check https://mcp-release-fixture.vercel.app/mcp
 ```
 
 **CLI exit codes:**
@@ -92,18 +100,22 @@ node packages/cli/dist/index.js check https://staging.example.com/mcp \
 
 The GitHub Action supports public, staging, and authenticated MCP endpoints. Secrets stay in GitHub Actions secrets and are masked in logs.
 
+Reference by a tagged release once published, or by commit SHA for pinned usage:
+
 ```yaml
 - name: Validate MCP server
-  uses: daranium2020/mcp-release@main
+  uses: daranium2020/mcp-release@v0.0.1
   with:
     endpoint: https://staging.example.com/mcp
-    bearer-token-env: MCP_TOKEN   # optional: reads token from env
+    bearer-token-env: MCP_TOKEN   # reads token from env; never put secrets inline
     fail-on: fail                 # optional: fail (default) | warning
     timeout-ms: 10000             # optional
     format: markdown              # optional: json | markdown | both
   env:
     MCP_TOKEN: ${{ secrets.MCP_TOKEN }}
 ```
+
+Pass all secrets through the `env` block using GitHub Actions secrets (`${{ secrets.YOUR_SECRET }}`). Never put secret values directly in `with:` inputs or workflow YAML.
 
 **Auth inputs:**
 
