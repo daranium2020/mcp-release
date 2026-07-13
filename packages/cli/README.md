@@ -14,7 +14,7 @@ Or run without installing:
 npx @mcp-release/cli check https://your-mcp-server.example.com/mcp
 ```
 
-Requires Node.js >= 20.
+Requires Node.js >= 22.13.0.
 
 ## Usage
 
