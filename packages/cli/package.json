@@ -1,29 +1,41 @@
 {
   "name": "@mcp-release/cli",
   "version": "0.0.1",
-  "private": true,
-  "type": "module",
+  "description": "Release validation CLI for MCP servers",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/daranium2020/mcp-release.git",
+    "directory": "packages/cli"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "validation",
+    "release",
+    "cli"
+  ],
+  "main": "./dist/index.js",
   "bin": {
     "mcp-release": "./dist/index.js"
   },
-  "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    }
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
-  "dependencies": {
+  "devDependencies": {
     "@mcp-release/core": "workspace:*",
     "@mcp-release/reporter": "workspace:*",
-    "commander": "^12.0.0"
-  },
-  "devDependencies": {
     "@types/node": "^22.0.0",
+    "commander": "^12.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.5.0"
   }

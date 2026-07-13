@@ -5,14 +5,11 @@ import {
   HeaderValidationError,
 } from "@mcp-release/core";
 import { toJson, toMarkdown, toTerminal } from "@mcp-release/reporter";
-import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join, resolve, dirname as pathDirname } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { resolve, dirname as pathDirname } from "node:path";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const pkg = JSON.parse(
-  readFileSync(join(__dirname, "../package.json"), "utf8"),
-) as { version: string };
+// Injected at build time by tsup define — avoids import.meta.url in CJS bundle
+declare const __CLI_VERSION__: string;
 
 /**
  * Exit codes:
@@ -26,7 +23,7 @@ const pkg = JSON.parse(
 program
   .name("mcp-release")
   .description("Release validation checker for MCP servers")
-  .version(pkg.version);
+  .version(__CLI_VERSION__);
 
 type CheckOptions = {
   header: string[];
