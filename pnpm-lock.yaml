@@ -130,20 +130,19 @@ importers:
         version: 5.9.3
 
   packages/cli:
-    dependencies:
+    devDependencies:
       '@mcp-release/core':
         specifier: workspace:*
         version: link:../core
       '@mcp-release/reporter':
         specifier: workspace:*
         version: link:../reporter
-      commander:
-        specifier: ^12.0.0
-        version: 12.1.0
-    devDependencies:
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.0
+      commander:
+        specifier: ^12.0.0
+        version: 12.1.0
       tsup:
         specifier: ^8.0.0
         version: 8.5.1(postcss@8.5.15)(typescript@5.9.3)
