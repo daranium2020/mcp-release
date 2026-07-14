@@ -73,5 +73,5 @@ outputs:
     description: 'Absolute path to the written Markdown report (if format includes markdown)'
 
 runs:
-  using: 'node20'
+  using: 'node24'
   main: 'packages/github-action/dist/index.js'

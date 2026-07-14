@@ -38,13 +38,13 @@ mcp-release check https://mcp-release-fixture.vercel.app/mcp
    ```
 3. Create an annotated tag:
    ```bash
-   git tag -a v0.1.1 -m "v0.1.1"
+   git tag -a v0.1.2 -m "v0.1.2"
    ```
 4. Push the tag:
    ```bash
-   git push origin v0.1.1
+   git push origin v0.1.2
    ```
-5. **CLI publish — SKIPPED for v0.1.1.** The CLI logic is unchanged from 0.1.0.
+5. **CLI publish — SKIPPED for v0.1.2.** The CLI logic is unchanged from 0.1.0.
    `@mcp-release/cli` remains at 0.1.0 on npm. Do not run `npm publish`.
 6. Create a GitHub release from the tag at https://github.com/daranium2020/mcp-release/releases/new.
    - Use the changelog entry as the release description.
@@ -61,7 +61,7 @@ mcp-release check https://mcp-release-fixture.vercel.app/mcp
    ```
 9. Verify GitHub Action usage with the published tag in a test workflow:
    ```yaml
-   uses: daranium2020/mcp-release@v0.1.1
+   uses: daranium2020/mcp-release@v0.1.2
    ```
 
 ## Rollback notes

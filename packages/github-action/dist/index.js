@@ -51711,7 +51711,7 @@ ${captureLines}` : capture.stack;
 });
 
 // src/index.ts
-var core4 = __toESM(require_core(), 1);
+var core4 = __toESM(require_core());
 
 // ../../node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/external.js
 var external_exports = {};
@@ -65741,10 +65741,10 @@ function toMarkdown(report) {
 
 // src/index.ts
 var import_node_fs = require("fs");
-var import_node_path = __toESM(require("path"), 1);
+var import_node_path = __toESM(require("path"));
 
 // src/inputs.ts
-var core = __toESM(require_core(), 1);
+var core = __toESM(require_core());
 function parseLines(raw) {
   return raw.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
 }
@@ -65832,7 +65832,7 @@ function parseInputs() {
 }
 
 // src/annotations.ts
-var core2 = __toESM(require_core(), 1);
+var core2 = __toESM(require_core());
 function emitAnnotations(findings, toolName) {
   for (const f of findings) {
     if (f.severity !== "WARNING" && f.severity !== "FAIL") continue;
@@ -65847,7 +65847,7 @@ function emitAnnotations(findings, toolName) {
 }
 
 // src/summary.ts
-var core3 = __toESM(require_core(), 1);
+var core3 = __toESM(require_core());
 var STATUS_EMOJI = {
   PASS: "\u2705",
   WARNING: "\u26A0\uFE0F",

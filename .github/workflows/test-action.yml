@@ -1,4 +1,4 @@
-name: Test Action v0.1.1
+name: Test Action v0.1.2
 
 on:
   workflow_dispatch:
@@ -8,11 +8,11 @@ permissions:
 
 jobs:
   test:
-    name: Smoke-test daranium2020/mcp-release@v0.1.1
+    name: Smoke-test daranium2020/mcp-release@v0.1.2
     runs-on: ubuntu-latest
 
     steps:
       - name: Run MCP Release check
-        uses: daranium2020/mcp-release@v0.1.1
+        uses: daranium2020/mcp-release@v0.1.2
         with:
           endpoint: https://mcp-release-fixture.vercel.app/mcp
