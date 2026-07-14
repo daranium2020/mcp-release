@@ -38,11 +38,11 @@ mcp-release check https://mcp-release-fixture.vercel.app/mcp
    ```
 3. Create an annotated tag:
    ```bash
-   git tag -a v0.1.0 -m "v0.1.0"
+   git tag -a v0.1.1 -m "v0.1.1"
    ```
 4. Push the tag:
    ```bash
-   git push origin v0.1.0
+   git push origin v0.1.1
    ```
 5. Publish the CLI package to npm from `packages/cli`:
    ```bash
@@ -63,7 +63,7 @@ mcp-release check https://mcp-release-fixture.vercel.app/mcp
    ```
 9. Verify GitHub Action usage with the published tag in a test workflow:
    ```yaml
-   uses: daranium2020/mcp-release@v0.1.0
+   uses: daranium2020/mcp-release@v0.1.1
    ```
 
 ## Rollback notes
