@@ -1,6 +1,6 @@
 {
   "name": "@mcp-release/github-action",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "GitHub Action for MCP server release validation",
   "type": "module",
