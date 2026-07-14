@@ -1,5 +1,8 @@
 # MCP Release
 
+[![npm version](https://img.shields.io/npm/v/@mcp-release/cli)](https://www.npmjs.com/package/@mcp-release/cli)
+[![npm downloads](https://img.shields.io/npm/dm/@mcp-release/cli)](https://www.npmjs.com/package/@mcp-release/cli)
+
 MCP Release checks a remote MCP server. It verifies the protocol handshake, discovers tools, validates their schemas, and checks network configuration. It does not execute tools or accept credentials.
 
 **Web app:** https://mcprelease.dev
@@ -27,11 +30,11 @@ The CLI runs on your machine and supports public, private, localhost, and authen
 The web checker at https://mcprelease.dev only accepts public HTTPS endpoints without credentials. Use the CLI or GitHub Action for private networks, localhost, staging servers, or any endpoint that requires authentication.
 
 ```bash
-# Install globally (once published to npm)
+# Install globally
 npm install -g @mcp-release/cli
 
 # Or run directly without installing
-npx @mcp-release/cli check https://your-mcp-server.example.com/mcp
+npx -y @mcp-release/cli check https://your-mcp-server.example.com/mcp
 ```
 
 ```bash
