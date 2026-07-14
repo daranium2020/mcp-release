@@ -273,7 +273,7 @@ mcp-release check http://localhost:4000/mcp --allow-http`}</code>
             <h3 className={styles.h3}>GitHub Action</h3>
             <pre className={styles.pre}>
               <code>{`- name: Validate MCP server
-  uses: daranium2020/mcp-release@v0.1.1
+  uses: daranium2020/mcp-release@v0.1.2
   with:
     endpoint: https://staging.example.com/mcp
     bearer-token-env: MCP_TOKEN
@@ -501,7 +501,7 @@ pnpm lint`}</code>
               to run MCP Release checks in CI:
             </p>
             <pre className={styles.pre}>
-              <code>{`- uses: daranium2020/mcp-release@v0.1.1
+              <code>{`- uses: daranium2020/mcp-release@v0.1.2
   with:
     endpoint: https://your-mcp-server.example.com/mcp
     fail-on: fail        # optional: fail (default) | warning

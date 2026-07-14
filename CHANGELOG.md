@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.2 - 2026-07-15
+
+### Fixed
+
+- GitHub Action runtime updated to `node24`. GitHub Actions runners now use Node.js 24 by default and emit a warning when the action declares `node20`.
+- Removed `"type": "module"` from `packages/github-action/package.json`. The presence of that field caused Node.js to treat the CJS bundle (`dist/index.js`) as ESM, producing `ReferenceError: require is not defined in ES module scope` at runtime.
+
+### Notes
+
+- No new npm package is published for this release. `@mcp-release/cli` remains at 0.1.0 (CLI logic is unchanged).
+
 ## 0.1.1 - 2026-07-14
 
 ### Added
