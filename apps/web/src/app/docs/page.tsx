@@ -68,6 +68,36 @@ export default function DocsPage() {
             </p>
           </section>
 
+          {/* CLI */}
+          <section aria-labelledby="cli-heading">
+            <h2 id="cli-heading" className={styles.h2}>
+              Command-line interface
+            </h2>
+            <p>
+              The CLI supports public, private, staging, localhost, and
+              authenticated MCP endpoints. Credentials stay in your
+              environment and are never sent to the web app or stored.
+            </p>
+            <h3 className={styles.h3}>Install</h3>
+            <pre className={styles.pre}>
+              <code>{`npm install -g @mcp-release/cli
+mcp-release --version
+mcp-release check https://your-mcp-server.example.com/mcp`}</code>
+            </pre>
+            <h3 className={styles.h3}>Run without installing</h3>
+            <pre className={styles.pre}>
+              <code>{`npx -y @mcp-release/cli check https://your-mcp-server.example.com/mcp`}</code>
+            </pre>
+            <p>
+              For auth options (bearer tokens, custom headers, localhost),
+              see{" "}
+              <a href="#private-auth-heading">
+                Private and authenticated servers
+              </a>{" "}
+              below.
+            </p>
+          </section>
+
           {/* Supported endpoints */}
           <section aria-labelledby="endpoints-heading">
             <h2 id="endpoints-heading" className={styles.h2}>
@@ -243,7 +273,7 @@ mcp-release check http://localhost:4000/mcp --allow-http`}</code>
             <h3 className={styles.h3}>GitHub Action</h3>
             <pre className={styles.pre}>
               <code>{`- name: Validate MCP server
-  uses: daranium2020/mcp-release@main
+  uses: daranium2020/mcp-release@v0.1.0
   with:
     endpoint: https://staging.example.com/mcp
     bearer-token-env: MCP_TOKEN
@@ -471,7 +501,7 @@ pnpm lint`}</code>
               to run MCP Release checks in CI:
             </p>
             <pre className={styles.pre}>
-              <code>{`- uses: daranium2020/mcp-release@main
+              <code>{`- uses: daranium2020/mcp-release@v0.1.0
   with:
     endpoint: https://your-mcp-server.example.com/mcp
     fail-on: fail        # optional: fail (default) | warning

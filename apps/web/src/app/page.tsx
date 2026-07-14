@@ -225,6 +225,27 @@ export default function HomePage() {
           </ul>
         </section>
 
+        {/* CLI */}
+        <section
+          className={styles.section}
+          aria-labelledby="cli-heading"
+        >
+          <h2 id="cli-heading" className={styles.sectionHeading}>
+            Use from the terminal
+          </h2>
+          <p className={styles.demoDesc}>
+            For private, staging, localhost, or authenticated endpoints,
+            use the CLI. Credentials stay on your machine.
+          </p>
+          <pre className={styles.pre}>
+            <code className={styles.preCode}>{`npm install -g @mcp-release/cli
+mcp-release check https://your-mcp-server.example.com/mcp
+
+# Or without installing
+npx -y @mcp-release/cli check https://your-mcp-server.example.com/mcp`}</code>
+          </pre>
+        </section>
+
         {/* Demo */}
         <section
           className={styles.section}

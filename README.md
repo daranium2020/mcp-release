@@ -103,7 +103,7 @@ node packages/cli/dist/index.js check https://mcp-release-fixture.vercel.app/mcp
 
 The GitHub Action supports public, staging, and authenticated MCP endpoints. Secrets stay in GitHub Actions secrets and are masked in logs.
 
-Reference by a tagged release once published, or by commit SHA for pinned usage:
+Reference by a tagged release or by commit SHA for pinned usage:
 
 ```yaml
 - name: Validate MCP server

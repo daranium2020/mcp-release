@@ -261,6 +261,24 @@
   font-weight: 600;
 }
 
+/* ---- CLI code block ---- */
+.pre {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  overflow-x: auto;
+  margin-top: 0.75rem;
+}
+
+.preCode {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--text);
+  line-height: 1.7;
+  white-space: pre;
+}
+
 /* ---- Mobile adjustments ---- */
 @media (max-width: 640px) {
   .hero {
