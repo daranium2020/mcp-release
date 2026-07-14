@@ -8,9 +8,9 @@ All notable changes to this project will be documented in this file.
 
 - Root `action.yml` so the GitHub Action is accessible via `uses: daranium2020/mcp-release@v0.1.1`. The action implementation was complete in 0.1.0 but could not be loaded by GitHub without a manifest at the repository root.
 
-### Fixed
+### Notes
 
-- npm bin entry (`dist/index.js` without leading `./`) to prevent npm's normalizer from emitting a spurious "script name was invalid and removed" warning during publish. The CLI binary works correctly in both versions; this removes the warning.
+- No new npm package is published for this release. `@mcp-release/cli` remains at 0.1.0 (CLI logic is unchanged).
 
 ## 0.1.0 - 2026-07-14
 

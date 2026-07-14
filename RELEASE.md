@@ -44,17 +44,15 @@ mcp-release check https://mcp-release-fixture.vercel.app/mcp
    ```bash
    git push origin v0.1.1
    ```
-5. Publish the CLI package to npm from `packages/cli`:
-   ```bash
-   npm publish
-   ```
+5. **CLI publish — SKIPPED for v0.1.1.** The CLI logic is unchanged from 0.1.0.
+   `@mcp-release/cli` remains at 0.1.0 on npm. Do not run `npm publish`.
 6. Create a GitHub release from the tag at https://github.com/daranium2020/mcp-release/releases/new.
    - Use the changelog entry as the release description.
    - Do not attach binary assets.
-7. Verify npm install from a clean directory:
+7. Verify the existing CLI still works (no new publish needed):
    ```bash
-   npm install -g @mcp-release/cli
-   mcp-release --version
+   npm install -g @mcp-release/cli   # installs 0.1.0
+   mcp-release --version             # should print 0.1.0
    mcp-release check https://mcp-release-fixture.vercel.app/mcp
    ```
 8. Verify npx usage:
