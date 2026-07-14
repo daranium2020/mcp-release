@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/daranium2020/mcp-release.git",
+    "url": "git+https://github.com/daranium2020/mcp-release.git",
     "directory": "packages/cli"
   },
   "keywords": [
@@ -17,7 +17,7 @@
   ],
   "main": "./dist/index.js",
   "bin": {
-    "mcp-release": "./dist/index.js"
+    "mcp-release": "dist/index.js"
   },
   "files": [
     "dist",
