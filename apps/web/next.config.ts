@@ -35,6 +35,18 @@ const CSP = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
+  experimental: {
+    // tsconfig paths map @mcp-release/* to source .ts files (no dist/ needed
+    // for tsc --noEmit). Next.js applies those paths via JsConfigPathsPlugin,
+    // so webpack follows the source tree. Source files import peers as
+    // './report.js' (TypeScript moduleResolution:Bundler convention), which
+    // webpack cannot resolve without this alias. extensionAlias tells the
+    // resolver to also try .ts/.tsx when a .js import cannot be found.
+    extensionAlias: {
+      ".js": [".ts", ".tsx", ".js"],
+      ".jsx": [".tsx", ".jsx"],
+    },
+  },
   async headers() {
     return [
       {
