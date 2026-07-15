@@ -27,6 +27,12 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@mcp-release/core": [
+        "../../packages/core/src/index.ts"
+      ],
+      "@mcp-release/reporter": [
+        "../../packages/reporter/src/index.ts"
       ]
     },
     "allowJs": true,
