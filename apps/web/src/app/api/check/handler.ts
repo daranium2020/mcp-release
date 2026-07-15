@@ -12,6 +12,7 @@ import {
   MIN_TIMEOUT_MS,
   MAX_TIMEOUT_MS,
 } from "../../../lib/constants";
+import { logCheckStart, logCheckComplete, type Outcome } from "../../../lib/usage-log";
 
 // Hard cap above the user-configurable max to catch runaway validators.
 const MAX_EXECUTION_MS = MAX_TIMEOUT_MS + 5_000;
@@ -184,6 +185,10 @@ export async function handleCheckRequest(
     );
   }
 
+  const hostname = endpointUrl.hostname;
+  const startMs = Date.now();
+  logCheckStart(hostname);
+
   try {
     // 10. Run validation with hard execution time cap.
     // The validator has its own timeout (timeoutMs) but we add an outer
@@ -210,11 +215,22 @@ export async function handleCheckRequest(
       execDeadline,
     ]);
 
+    const outcome: Outcome =
+      report.overallStatus === "PASS" ? "pass" :
+      report.overallStatus === "WARNING" ? "warn" : "fail";
+    logCheckComplete(hostname, outcome, Date.now() - startMs, report.tools.length);
+
     return new Response(JSON.stringify({ report }), {
       status: 200,
       headers: securityHeaders(),
     });
   } catch (err) {
+    const errorCategory =
+      err instanceof Error && err.message === "Execution time limit exceeded"
+        ? "timeout"
+        : "validator_error";
+    logCheckComplete(hostname, "error", Date.now() - startMs, undefined, errorCategory);
+
     // Redact sensitive patterns (token=...) and URL credentials (user:pass@)
     // from error messages before returning. redactErrorMessage handles token
     // patterns; the second pass strips embedded URL credentials not caught by
