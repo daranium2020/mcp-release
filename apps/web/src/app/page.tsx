@@ -15,8 +15,9 @@ export default function HomePage() {
             Check an MCP server before release.
           </h1>
           <p className={styles.subhead}>
-            Verify the protocol handshake, tool schemas, and network
-            behavior. MCP Release does not execute tools.
+            Verify the protocol handshake, tool schemas, and stdio transport
+            behavior. Supports HTTP/SSE remote servers and local spawned
+            processes. MCP Release does not execute tools.
           </p>
           <a href="/docs" className={styles.docsLink}>
             View documentation
@@ -26,58 +27,82 @@ export default function HomePage() {
         {/* Check form */}
         <CheckClient demoEndpoint={DEMO_ENDPOINT} />
 
-        {/* How it works */}
+        {/* Three ways to use */}
         <section
           className={styles.section}
-          aria-labelledby="how-heading"
+          aria-labelledby="ways-heading"
         >
-          <h2 id="how-heading" className={styles.sectionHeading}>
-            How it works
+          <h2 id="ways-heading" className={styles.sectionHeading}>
+            Three ways to use MCP Release
           </h2>
-          <ol className={styles.stepsList}>
-            <li className={styles.step}>
-              <span className={styles.stepNum} aria-hidden="true">
-                1
+          <ul className={styles.waysGrid}>
+            <li className={styles.wayCard}>
+              <span className={styles.wayLabel}>Browser</span>
+              <span className={styles.wayDesc}>
+                Public HTTPS endpoint validation. No install required. No
+                credentials accepted or stored.
               </span>
-              <div className={styles.stepContent}>
-                <span className={styles.stepTitle}>
-                  Enter a public HTTPS endpoint
-                </span>
-                <span className={styles.stepDesc}>
-                  Paste your MCP server URL. Only HTTPS endpoints are
-                  accepted. No credentials are needed or stored.
-                </span>
-              </div>
             </li>
-            <li className={styles.step}>
-              <span className={styles.stepNum} aria-hidden="true">
-                2
+            <li className={styles.wayCard}>
+              <span className={styles.wayLabel}>CLI</span>
+              <span className={styles.wayDesc}>
+                Local, private, authenticated, localhost, and stdio servers.
+                Credentials stay on your machine.
               </span>
-              <div className={styles.stepContent}>
-                <span className={styles.stepTitle}>
-                  Validation runs
-                </span>
-                <span className={styles.stepDesc}>
-                  MCP Release connects, negotiates the protocol, and
-                  lists tools. Tools are never invoked.
-                </span>
-              </div>
             </li>
-            <li className={styles.step}>
-              <span className={styles.stepNum} aria-hidden="true">
-                3
+            <li className={styles.wayCard}>
+              <span className={styles.wayLabel}>GitHub Actions</span>
+              <span className={styles.wayDesc}>
+                Automated MCP validation in CI. Secrets stay in GitHub
+                secrets and are never sent to MCP Release.
               </span>
-              <div className={styles.stepContent}>
-                <span className={styles.stepTitle}>
-                  Review or export the findings
-                </span>
-                <span className={styles.stepDesc}>
-                  Read the report in the browser, or download it as
-                  JSON or Markdown.
-                </span>
-              </div>
             </li>
-          </ol>
+          </ul>
+        </section>
+
+        {/* Local stdio validation — v0.2.0 */}
+        <section
+          className={styles.section}
+          aria-labelledby="stdio-heading"
+        >
+          <h2 id="stdio-heading" className={styles.sectionHeading}>
+            Local stdio validation
+          </h2>
+          <p className={styles.demoDesc}>
+            New in v0.2.0. MCP Release can spawn and validate any MCP server
+            that communicates over stdin/stdout. Pass a command string; MCP
+            Release starts the process, performs MCP initialization, discovers
+            tools, validates schemas, and shuts down cleanly.
+          </p>
+          <p className={styles.stdioNote}>
+            Validation runs entirely on your machine or GitHub Actions runner.
+            No stdio validation data is sent to MCP Release servers. The
+            spawned process, its output, and all findings stay local.
+          </p>
+          <p className={styles.preLabel}>What it checks:</p>
+          <ul className={styles.featureList}>
+            <li>MCP initialization handshake and protocol negotiation</li>
+            <li>Tool discovery and schema validation</li>
+            <li>Unexpected output on stdout (logs must go to stderr)</li>
+            <li>Malformed MCP messages on stdout</li>
+            <li>Response size limit</li>
+            <li>Startup timeout</li>
+            <li>Clean shutdown after stdin EOF</li>
+          </ul>
+          <p className={styles.preLabel}>CLI:</p>
+          <pre className={styles.pre}>
+            <code className={styles.preCode}>{`npx -y @mcp-release/cli check --stdio --command "npx -y my-mcp-server"
+
+# With a working directory
+npx -y @mcp-release/cli check --stdio --command "node dist/server.js" --cwd ./my-server`}</code>
+          </pre>
+          <p className={styles.preLabel}>GitHub Actions:</p>
+          <pre className={styles.pre}>
+            <code className={styles.preCode}>{`- uses: daranium2020/mcp-release@v0.2.0
+  with:
+    transport: stdio
+    command: npx -y my-mcp-server`}</code>
+          </pre>
         </section>
 
         {/* What it checks */}
@@ -107,13 +132,18 @@ export default function HomePage() {
               <span className={styles.checksTitle}>Network safety</span>
               <span className={styles.checksDesc}>
                 SSRF protection, DNS pinning, redirect validation, and
-                private address blocking
+                private address blocking (HTTP/SSE)
               </span>
             </li>
             <li className={styles.checksItem}>
-              <span className={styles.checksTitle}>
-                Reports
+              <span className={styles.checksTitle}>Stdio transport</span>
+              <span className={styles.checksDesc}>
+                Unexpected stdout output, malformed MCP messages,
+                response size limits, and clean shutdown
               </span>
+            </li>
+            <li className={styles.checksItem}>
+              <span className={styles.checksTitle}>Reports</span>
               <span className={styles.checksDesc}>
                 Findings exportable as JSON or Markdown
               </span>
@@ -203,8 +233,8 @@ export default function HomePage() {
               never invoked. No arguments are constructed or sent.
             </li>
             <li>
-              Only public HTTPS endpoints are accepted. HTTP is
-              rejected before any connection.
+              Only public HTTPS endpoints are accepted by the web checker.
+              HTTP is rejected before any connection.
             </li>
             <li>
               Private, loopback, link-local, and cloud-metadata
@@ -239,10 +269,16 @@ export default function HomePage() {
           </p>
           <pre className={styles.pre}>
             <code className={styles.preCode}>{`npm install -g @mcp-release/cli
+
+# HTTP/SSE endpoint
 mcp-release check https://your-mcp-server.example.com/mcp
 
 # Or without installing
 npx -y @mcp-release/cli check https://your-mcp-server.example.com/mcp`}</code>
+          </pre>
+          <p className={styles.preLabel}>Local stdio server:</p>
+          <pre className={styles.pre}>
+            <code className={styles.preCode}>{`npx -y @mcp-release/cli check --stdio --command "npx -y my-mcp-server"`}</code>
           </pre>
         </section>
 
