@@ -1,8 +1,8 @@
 import { program } from "commander";
 import {
   runCheck,
+  runStdioCheck,
   buildRequestHeaders,
-  HeaderValidationError,
 } from "@mcp-release/core";
 import { toJson, toMarkdown, toTerminal } from "@mcp-release/reporter";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -26,6 +26,9 @@ program
   .version(__CLI_VERSION__);
 
 type CheckOptions = {
+  stdio: boolean;
+  command?: string;
+  cwd?: string;
   header: string[];
   headerEnv: string[];
   bearerTokenEnv?: string;
@@ -39,27 +42,45 @@ type CheckOptions = {
 };
 
 program
-  .command("check <url>")
-  .description("Validate an MCP server and produce a report")
+  .command("check [url]")
+  .description(
+    "Validate an MCP server and produce a report.\n\n" +
+      "HTTP mode (default):  mcp-release check <url>\n" +
+      "Stdio mode:           mcp-release check --stdio --command <cmd>",
+  )
+  .option(
+    "--stdio",
+    "Validate a local stdio MCP server instead of a remote HTTP endpoint",
+    false,
+  )
+  .option(
+    "--command <cmd>",
+    "Command to run the stdio MCP server (used with --stdio). " +
+      'Example: "npx -y my-mcp-server" or "node ./dist/server.js"',
+  )
+  .option(
+    "--cwd <dir>",
+    "Working directory for the stdio server process (used with --stdio)",
+  )
   .option(
     "--header <header>",
-    'Add a request header as "Name: value". Can be repeated.',
+    'Add a request header as "Name: value". Can be repeated. (HTTP mode only)',
     (val: string, prev: string[]) => [...prev, val],
     [] as string[],
   )
   .option(
     "--header-env <pair>",
-    'Read a header value from an env var as "Name=ENV_VAR". Can be repeated.',
+    'Read a header value from an env var as "Name=ENV_VAR". Can be repeated. (HTTP mode only)',
     (val: string, prev: string[]) => [...prev, val],
     [] as string[],
   )
   .option(
     "--bearer-token-env <var>",
-    "Read a bearer token from this environment variable and add Authorization: Bearer <token>",
+    "Read a bearer token from this environment variable. (HTTP mode only)",
   )
   .option(
     "--timeout-ms <ms>",
-    "Request timeout in milliseconds",
+    "Request/startup timeout in milliseconds",
     (v: string) => {
       const n = parseInt(v, 10);
       if (Number.isNaN(n) || n <= 0) {
@@ -72,13 +93,13 @@ program
   )
   .option(
     "--max-redirects <n>",
-    "Maximum redirects to follow",
+    "Maximum redirects to follow (HTTP mode only)",
     (v: string) => parseInt(v, 10),
     3,
   )
   .option(
     "--allow-http",
-    "Allow HTTP connections. Use for localhost in development/test only.",
+    "Allow HTTP connections. Use for localhost in development/test only. (HTTP mode only)",
     false,
   )
   .option("--json", "Print JSON report to stdout", false)
@@ -92,42 +113,79 @@ program
     "Exit with code 4 when the overall status is WARNING",
     false,
   )
-  .action(async (url: string, options: CheckOptions) => {
-    // Build request headers from all auth flags
-    let requestHeaders: Record<string, string> | undefined;
-    if (
-      options.header.length > 0 ||
-      options.headerEnv.length > 0 ||
-      options.bearerTokenEnv !== undefined
-    ) {
-      try {
-        requestHeaders = buildRequestHeaders(
-          options.header,
-          options.headerEnv,
-          options.bearerTokenEnv,
-          process.env as Record<string, string | undefined>,
+  .action(async (url: string | undefined, options: CheckOptions) => {
+    let report;
+
+    if (options.stdio) {
+      // ── Stdio transport ────────────────────────────────────────────────────
+      if (!options.command) {
+        process.stderr.write(
+          "Error: --command is required when using --stdio\n" +
+            'Example: mcp-release check --stdio --command "npx -y my-mcp-server"\n',
         );
-      } catch (err) {
-        const msg = err instanceof HeaderValidationError ? err.message : String(err);
-        process.stderr.write(`Error: ${msg}\n`);
         process.exit(2);
       }
-    }
 
-    let report;
-    try {
-      report = await runCheck(url, {
-        timeoutMs: options.timeoutMs,
-        maxRedirects: options.maxRedirects,
-        allowHttp: options.allowHttp,
-        allowPrivateNetworks: true, // CLI always allows private/internal networks
-        ...(requestHeaders !== undefined ? { requestHeaders } : {}),
-      });
-    } catch (err) {
-      process.stderr.write(
-        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
-      );
-      process.exit(3);
+      try {
+        report = await runStdioCheck(
+          {
+            command: options.command,
+            ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
+          },
+          { startupTimeoutMs: options.timeoutMs },
+        );
+      } catch (err) {
+        process.stderr.write(
+          `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+        process.exit(3);
+      }
+    } else {
+      // ── HTTP transport (default) ───────────────────────────────────────────
+      if (!url) {
+        process.stderr.write(
+          "Error: <url> is required for HTTP transport\n" +
+            "Usage: mcp-release check <url>\n" +
+            "       mcp-release check --stdio --command <cmd>\n",
+        );
+        process.exit(2);
+      }
+
+      // Build request headers from all auth flags
+      let requestHeaders: Record<string, string> | undefined;
+      if (
+        options.header.length > 0 ||
+        options.headerEnv.length > 0 ||
+        options.bearerTokenEnv !== undefined
+      ) {
+        try {
+          requestHeaders = buildRequestHeaders(
+            options.header,
+            options.headerEnv,
+            options.bearerTokenEnv,
+            process.env as Record<string, string | undefined>,
+          );
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          process.stderr.write(`Error: ${msg}\n`);
+          process.exit(2);
+        }
+      }
+
+      try {
+        report = await runCheck(url, {
+          timeoutMs: options.timeoutMs,
+          maxRedirects: options.maxRedirects,
+          allowHttp: options.allowHttp,
+          allowPrivateNetworks: true, // CLI always allows private/internal networks
+          ...(requestHeaders !== undefined ? { requestHeaders } : {}),
+        });
+      } catch (err) {
+        process.stderr.write(
+          `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+        process.exit(3);
+      }
     }
 
     // Stdout output (pick first matching mode; terminal is default)
@@ -147,7 +205,6 @@ program
         const outPath = resolve(options.out);
         mkdirSync(pathDirname(outPath), { recursive: true });
         writeFileSync(outPath, content, "utf8");
-        // Announce the path in terminal mode only (JSON/Markdown modes produce structured output)
         if (!options.json && !options.markdown) {
           process.stdout.write(`Report written to: ${outPath}\n`);
         }

@@ -1,5 +1,10 @@
 import * as core from "@actions/core";
-import { runCheck, redactErrorMessage, type ToolReport } from "@mcp-release/core";
+import {
+  runCheck,
+  runStdioCheck,
+  redactErrorMessage,
+  type ToolReport,
+} from "@mcp-release/core";
 import { toJson, toMarkdown } from "@mcp-release/reporter";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -12,22 +17,39 @@ const STATUS_ORDER: Record<string, number> = { PASS: 0, WARNING: 1, FAIL: 2 };
 async function main(): Promise<void> {
   const inputs = parseInputs();
 
-  core.info(`Checking MCP server: ${inputs.safeEndpoint}`);
-  if (inputs.developmentMode) {
-    core.warning("development-mode is enabled - HTTP connections are allowed. Do not use in production.");
-  }
-  if (Object.keys(inputs.requestHeaders).length > 0) {
-    const headerNames = Object.keys(inputs.requestHeaders).join(", ");
-    core.info(`Using request headers: ${headerNames} (values masked)`);
-  }
+  let report;
 
-  const report = await runCheck(inputs.endpoint, {
-    timeoutMs: inputs.timeoutMs,
-    allowHttp: inputs.developmentMode,
-    ...(Object.keys(inputs.requestHeaders).length > 0
-      ? { requestHeaders: inputs.requestHeaders }
-      : {}),
-  });
+  if (inputs.transport === "stdio") {
+    // ── Stdio transport ──────────────────────────────────────────────────────
+    const commandLabel = `stdio:${inputs.command.trim().split(/\s+/)[0] ?? "unknown"}`;
+    core.info(`Checking MCP server (stdio): ${commandLabel}`);
+
+    const cwdOpt = inputs.workingDirectory !== "" ? { cwd: inputs.workingDirectory } : {};
+    report = await runStdioCheck(
+      { command: inputs.command, ...cwdOpt },
+      { startupTimeoutMs: inputs.timeoutMs },
+    );
+  } else {
+    // ── HTTP transport ───────────────────────────────────────────────────────
+    core.info(`Checking MCP server: ${inputs.safeEndpoint}`);
+    if (inputs.developmentMode) {
+      core.warning(
+        "development-mode is enabled - HTTP connections are allowed. Do not use in production.",
+      );
+    }
+    if (Object.keys(inputs.requestHeaders).length > 0) {
+      const headerNames = Object.keys(inputs.requestHeaders).join(", ");
+      core.info(`Using request headers: ${headerNames} (values masked)`);
+    }
+
+    report = await runCheck(inputs.endpoint, {
+      timeoutMs: inputs.timeoutMs,
+      allowHttp: inputs.developmentMode,
+      ...(Object.keys(inputs.requestHeaders).length > 0
+        ? { requestHeaders: inputs.requestHeaders }
+        : {}),
+    });
+  }
 
   // Count findings
   const allFindings = [
@@ -49,9 +71,10 @@ async function main(): Promise<void> {
   core.setOutput("fail-count", String(failCount));
 
   // Determine output directory
-  const outDir = inputs.outputDirectory !== ""
-    ? path.resolve(inputs.outputDirectory)
-    : (process.env["RUNNER_TEMP"] ?? "/tmp");
+  const outDir =
+    inputs.outputDirectory !== ""
+      ? path.resolve(inputs.outputDirectory)
+      : (process.env["RUNNER_TEMP"] ?? "/tmp");
 
   let singleReportPath: string | undefined;
 

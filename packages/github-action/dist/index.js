@@ -64471,6 +64471,7 @@ var import_net2 = __toESM(require("net"), 1);
 var import_promises = __toESM(require("dns/promises"), 1);
 var import_ajv2 = __toESM(require_ajv(), 1);
 var import_ajv_formats2 = __toESM(require_dist(), 1);
+var import_child_process = require("child_process");
 var FindingSeverity = external_exports.enum(["PASS", "WARNING", "FAIL"]);
 var FindingCode = external_exports.enum([
   // Transport / connectivity
@@ -64501,7 +64502,13 @@ var FindingCode = external_exports.enum([
   // Success markers
   "INIT_OK",
   "TOOLS_LIST_OK",
-  "TOOL_OK"
+  "TOOL_OK",
+  // Stdio transport
+  "STDIO_UNEXPECTED_OUTPUT",
+  "STDIO_FRAMING_ERROR",
+  "STDIO_SHUTDOWN_TIMEOUT",
+  "STDIO_PROCESS_ERROR",
+  "STDIO_RESPONSE_SIZE_EXCEEDED"
 ]);
 var Finding = external_exports.object({
   code: FindingCode,
@@ -65508,6 +65515,454 @@ async function runCheck(serverUrl, opts = {}) {
     tools: toolReports
   };
 }
+function parseShellCommand(cmd) {
+  const tokens = [];
+  let current = "";
+  let inSingle = false;
+  let inDouble = false;
+  for (let i = 0; i < cmd.length; i++) {
+    const ch = cmd[i];
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle;
+    } else if (ch === '"' && !inSingle) {
+      inDouble = !inDouble;
+    } else if (ch === "\\" && inDouble && i + 1 < cmd.length) {
+      current += cmd[++i];
+    } else if ((ch === " " || ch === "	") && !inSingle && !inDouble) {
+      if (current.length > 0) {
+        tokens.push(current);
+        current = "";
+      }
+    } else {
+      current += ch;
+    }
+  }
+  if (current.length > 0) tokens.push(current);
+  if (tokens.length === 0) throw new Error("Command must not be empty");
+  const [executable, ...args] = tokens;
+  return [executable, args];
+}
+var INHERITED_ENV_KEYS = process.platform === "win32" ? [
+  "APPDATA",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "LOCALAPPDATA",
+  "PATH",
+  "PROCESSOR_ARCHITECTURE",
+  "SYSTEMDRIVE",
+  "SYSTEMROOT",
+  "TEMP",
+  "USERNAME",
+  "USERPROFILE"
+] : [
+  "HOME",
+  "LOGNAME",
+  "PATH",
+  "SHELL",
+  "TERM",
+  "USER",
+  "TMPDIR",
+  "npm_config_cache",
+  "npm_execpath"
+];
+function buildSafeEnv(override) {
+  const env = {};
+  for (const key of INHERITED_ENV_KEYS) {
+    const val = process.env[key];
+    if (val !== void 0) env[key] = val;
+  }
+  if (override) Object.assign(env, override);
+  return env;
+}
+var MAX_PREVIEW_CHARS = 200;
+var StdioValidatingTransport = class {
+  constructor(_executable, _args, opts) {
+    this._executable = _executable;
+    this._args = _args;
+    this._opts = opts;
+  }
+  _executable;
+  _args;
+  _process = void 0;
+  // Validation state — readable after close()
+  _unexpectedLines = [];
+  _framingErrors = [];
+  _sizeLimitExceeded = false;
+  _forcedKill = false;
+  _processExitCode = null;
+  /** Non-JSON lines received on stdout. Populated during the session. */
+  get unexpectedLines() {
+    return this._unexpectedLines;
+  }
+  /** Valid-JSON lines that failed MCP JSONRPCMessageSchema. */
+  get framingErrors() {
+    return this._framingErrors;
+  }
+  get sizeLimitExceeded() {
+    return this._sizeLimitExceeded;
+  }
+  /** True when the process did not exit cleanly and required SIGTERM/SIGKILL. */
+  get forcedKill() {
+    return this._forcedKill;
+  }
+  /** Exit code of the child process, or null if it hasn't exited. */
+  get processExitCode() {
+    return this._processExitCode;
+  }
+  // MCP Transport callbacks
+  onclose;
+  onerror;
+  onmessage;
+  _opts;
+  async start() {
+    if (this._process) {
+      throw new Error("StdioValidatingTransport already started");
+    }
+    return new Promise((resolve, reject) => {
+      const child = (0, import_child_process.spawn)(this._executable, this._args, {
+        ...this._opts.cwd !== void 0 ? { cwd: this._opts.cwd } : {},
+        env: buildSafeEnv(this._opts.env),
+        // stdin: pipe (we write to it), stdout: pipe (we read/validate it), stderr: inherit
+        stdio: ["pipe", "pipe", "inherit"],
+        shell: false
+      });
+      this._process = child;
+      child.on("error", (err) => {
+        this._process = void 0;
+        reject(err);
+        this.onerror?.(err);
+      });
+      child.on("spawn", () => {
+        resolve();
+      });
+      child.on("close", (code) => {
+        this._processExitCode = code;
+        this._process = void 0;
+        this.onclose?.();
+      });
+      child.stdin?.on("error", (err) => {
+        if (err.code !== "EPIPE") {
+          this.onerror?.(err);
+        }
+      });
+      let buf = "";
+      let totalBytes = 0;
+      child.stdout?.on("data", (chunk) => {
+        totalBytes += chunk.length;
+        if (totalBytes > this._opts.maxResponseSizeBytes && !this._sizeLimitExceeded) {
+          this._sizeLimitExceeded = true;
+          const limit = this._opts.maxResponseSizeBytes;
+          this.onerror?.(
+            new Error(`Server stdout exceeded ${limit} bytes; process killed`)
+          );
+          try {
+            child.kill("SIGTERM");
+          } catch {
+          }
+          return;
+        }
+        if (this._sizeLimitExceeded) return;
+        buf += chunk.toString("utf8");
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.replace(/\r$/, "");
+          if (trimmed === "") continue;
+          this._processLine(trimmed);
+        }
+      });
+      child.stdout?.on("error", (err) => {
+        this.onerror?.(err);
+      });
+      child.stdout?.on("close", () => {
+        const remaining = buf.replace(/\r$/, "").trim();
+        if (remaining.length > 0) this._processLine(remaining);
+        buf = "";
+      });
+    });
+  }
+  _processLine(line) {
+    let parsed;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      this._unexpectedLines.push(line.slice(0, MAX_PREVIEW_CHARS));
+      return;
+    }
+    const result = JSONRPCMessageSchema.safeParse(parsed);
+    if (!result.success) {
+      this._framingErrors.push(line.slice(0, MAX_PREVIEW_CHARS));
+      this.onerror?.(new Error("Server sent a malformed MCP protocol message on stdout"));
+      return;
+    }
+    this.onmessage?.(result.data);
+  }
+  async send(message) {
+    const proc = this._process;
+    if (!proc?.stdin) {
+      throw new Error("Transport is not connected");
+    }
+    const serialized = JSON.stringify(message) + "\n";
+    await new Promise((resolve, reject) => {
+      const written = proc.stdin.write(serialized, (err) => {
+        if (err) reject(err);
+      });
+      if (written) resolve();
+      else proc.stdin.once("drain", resolve);
+    });
+  }
+  async close() {
+    const proc = this._process;
+    if (!proc) return;
+    this._process = void 0;
+    let exited = false;
+    const exitPromise = new Promise((resolve) => {
+      if (proc.exitCode !== null) {
+        exited = true;
+        resolve();
+        return;
+      }
+      proc.once("close", () => {
+        exited = true;
+        resolve();
+      });
+    });
+    try {
+      proc.stdin?.end();
+    } catch {
+    }
+    await Promise.race([
+      exitPromise,
+      new Promise((resolve) => setTimeout(resolve, this._opts.shutdownTimeoutMs))
+    ]);
+    if (!exited) {
+      this._forcedKill = true;
+      try {
+        proc.kill("SIGTERM");
+      } catch {
+      }
+      await Promise.race([
+        exitPromise,
+        new Promise((resolve) => setTimeout(resolve, 2e3))
+      ]);
+      if (!exited) {
+        try {
+          proc.kill("SIGKILL");
+        } catch {
+        }
+        await Promise.race([
+          exitPromise,
+          new Promise((resolve) => setTimeout(resolve, 1e3))
+        ]);
+      }
+    }
+  }
+};
+var DEFAULT_STARTUP_TIMEOUT_MS = 15e3;
+var DEFAULT_SHUTDOWN_TIMEOUT_MS = 5e3;
+var DEFAULT_MAX_RESPONSE_SIZE_BYTES = 10 * 1024 * 1024;
+function safeCommandLabel(command) {
+  const first = command.trim().split(/\s+/)[0] ?? "unknown";
+  return `stdio:${redactString(first)}`;
+}
+function buildReport(serverUrl, checkedAt, startMs, findings, tools, protocolVersion, serverInfo) {
+  const allFindings = [...findings, ...tools.flatMap((t) => t.findings)];
+  return {
+    schemaVersion: "1",
+    serverUrl,
+    checkedAt,
+    durationMs: Date.now() - startMs,
+    overallStatus: worstSeverity(allFindings),
+    transport: null,
+    protocolVersion,
+    serverInfo,
+    findings,
+    tools
+  };
+}
+async function runStdioCheck(params, opts = {}) {
+  const startMs = Date.now();
+  const checkedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const label = safeCommandLabel(params.command);
+  const findings = [];
+  const startupTimeoutMs = opts.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
+  const shutdownTimeoutMs = opts.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS;
+  const maxResponseSizeBytes = opts.maxResponseSizeBytes ?? DEFAULT_MAX_RESPONSE_SIZE_BYTES;
+  let executable;
+  let args;
+  try {
+    [executable, args] = parseShellCommand(params.command);
+  } catch (err) {
+    findings.push(
+      makeFinding(
+        "STDIO_PROCESS_ERROR",
+        "FAIL",
+        `Invalid command: ${err instanceof Error ? err.message : String(err)}`
+      )
+    );
+    return buildReport(label, checkedAt, startMs, findings, [], null, null);
+  }
+  const transport = new StdioValidatingTransport(executable, args, {
+    ...params.cwd !== void 0 ? { cwd: params.cwd } : {},
+    maxResponseSizeBytes,
+    shutdownTimeoutMs
+  });
+  const client = new Client({ name: "mcp-release-checker", version: "0.0.1" });
+  let connected = false;
+  let protocolVersion = null;
+  let serverInfo = null;
+  let toolReports = [];
+  try {
+    const connectPromise = client.connect(transport);
+    const startupDeadline = new Promise(
+      (_, reject) => setTimeout(
+        () => reject(new Error("startup timeout")),
+        startupTimeoutMs
+      )
+    );
+    try {
+      await Promise.race([connectPromise, startupDeadline]);
+      connected = true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (transport.sizeLimitExceeded) {
+        findings.push(
+          makeFinding(
+            "STDIO_RESPONSE_SIZE_EXCEEDED",
+            "FAIL",
+            `Server stdout exceeded the ${maxResponseSizeBytes}-byte limit`
+          )
+        );
+      } else if (msg === "startup timeout") {
+        findings.push(
+          makeFinding(
+            "TIMEOUT",
+            "FAIL",
+            `Server did not complete MCP initialization within ${startupTimeoutMs}ms`
+          )
+        );
+      } else if (transport.processExitCode !== null && transport.processExitCode !== 0) {
+        findings.push(
+          makeFinding(
+            "STDIO_PROCESS_ERROR",
+            "FAIL",
+            `Server process exited with code ${transport.processExitCode} before initialization completed`
+          )
+        );
+      } else {
+        findings.push(
+          makeFinding(
+            "INIT_FAILURE",
+            "FAIL",
+            redactErrorMessage(err)
+          )
+        );
+      }
+      await transport.close().catch(() => void 0);
+      addTransportFindings(transport, findings);
+      return buildReport(label, checkedAt, startMs, findings, [], null, null);
+    }
+    const versionInfo = client.getServerVersion();
+    if (versionInfo) {
+      protocolVersion = versionInfo.version ?? null;
+      const nameVal = versionInfo.name;
+      serverInfo = {
+        ...nameVal !== void 0 ? { name: nameVal } : {},
+        ...versionInfo.version !== void 0 ? { version: versionInfo.version } : {}
+      };
+    }
+    findings.push(
+      makeFinding("INIT_OK", "PASS", "MCP initialization succeeded", {
+        protocolVersion: protocolVersion ?? void 0
+      })
+    );
+    try {
+      const tools = await listTools(client);
+      findings.push(
+        makeFinding("TOOLS_LIST_OK", "PASS", `Found ${tools.length} tool(s)`)
+      );
+      const result = validateTools(tools);
+      toolReports = result.toolReports;
+      findings.push(...result.topLevelFindings);
+    } catch (err) {
+      findings.push(
+        makeFinding(
+          "TOOLS_LIST_FAILURE",
+          "FAIL",
+          `tools/list failed: ${redactErrorMessage(err)}`
+        )
+      );
+    }
+    try {
+      await client.close();
+    } catch {
+    }
+  } catch (err) {
+    findings.push(
+      makeFinding(
+        "STDIO_PROCESS_ERROR",
+        "FAIL",
+        `Unexpected error: ${redactErrorMessage(err)}`
+      )
+    );
+    await transport.close().catch(() => void 0);
+  }
+  if (connected) {
+    if (transport.forcedKill) {
+      findings.push(
+        makeFinding(
+          "STDIO_SHUTDOWN_TIMEOUT",
+          "WARNING",
+          `Server process did not exit within ${shutdownTimeoutMs}ms and required SIGKILL`
+        )
+      );
+    }
+  }
+  addTransportFindings(transport, findings);
+  return buildReport(
+    label,
+    checkedAt,
+    startMs,
+    findings,
+    toolReports,
+    protocolVersion,
+    serverInfo
+  );
+}
+function addTransportFindings(transport, findings) {
+  if (transport.unexpectedLines.length > 0) {
+    findings.push(
+      makeFinding(
+        "STDIO_UNEXPECTED_OUTPUT",
+        "WARNING",
+        `Server wrote ${transport.unexpectedLines.length} non-protocol line(s) to stdout. Logs must go to stderr.`,
+        {
+          count: transport.unexpectedLines.length,
+          preview: transport.unexpectedLines[0]
+        }
+      )
+    );
+  }
+  if (transport.framingErrors.length > 0) {
+    findings.push(
+      makeFinding(
+        "STDIO_FRAMING_ERROR",
+        "FAIL",
+        `Server sent ${transport.framingErrors.length} malformed MCP protocol message(s) on stdout`,
+        { count: transport.framingErrors.length }
+      )
+    );
+  }
+  if (transport.sizeLimitExceeded && !findings.some((f) => f.code === "STDIO_RESPONSE_SIZE_EXCEEDED")) {
+    findings.push(
+      makeFinding(
+        "STDIO_RESPONSE_SIZE_EXCEEDED",
+        "FAIL",
+        "Server stdout exceeded the configured response size limit"
+      )
+    );
+  }
+}
 var HTTP_TOKEN_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 var HeaderValidationError = class extends Error {
   constructor(message) {
@@ -65749,18 +66204,33 @@ function parseLines(raw) {
   return raw.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
 }
 function parseInputs() {
-  const rawEndpoint = core.getInput("endpoint", { required: true }).trim();
-  if (rawEndpoint === "") {
-    throw new Error("Input 'endpoint' must not be empty");
-  }
-  try {
-    new URL(rawEndpoint);
-  } catch {
+  const transportRaw = (core.getInput("transport").trim() || "http").toLowerCase();
+  if (transportRaw !== "http" && transportRaw !== "stdio") {
     throw new Error(
-      `Input 'endpoint' is not a valid URL: ${redactUrl(rawEndpoint)}`
+      `Input 'transport' must be "http" or "stdio", got: ${transportRaw}`
     );
   }
-  const safeEndpoint = redactUrl(rawEndpoint);
+  const transport = transportRaw;
+  const command = core.getInput("command").trim();
+  const workingDirectory = core.getInput("working-directory").trim();
+  if (transport === "stdio" && command === "") {
+    throw new Error("Input 'command' is required when transport is 'stdio'");
+  }
+  const rawEndpoint = core.getInput("endpoint").trim();
+  if (transport === "http" && rawEndpoint === "") {
+    throw new Error("Input 'endpoint' is required when transport is 'http'");
+  }
+  let safeEndpoint = "";
+  if (transport === "http") {
+    try {
+      new URL(rawEndpoint);
+    } catch {
+      throw new Error(
+        `Input 'endpoint' is not a valid URL: ${redactUrl(rawEndpoint)}`
+      );
+    }
+    safeEndpoint = redactUrl(rawEndpoint);
+  }
   const bearerTokenEnvName = core.getInput("bearer-token-env").trim() || void 0;
   const headerLines = parseLines(core.getInput("header"));
   const headerEnvLines = parseLines(core.getInput("header-env"));
@@ -65771,7 +66241,7 @@ function parseInputs() {
     }
   }
   let requestHeaders = {};
-  if (headerLines.length > 0 || headerEnvLines.length > 0 || bearerTokenEnvName !== void 0) {
+  if (transport === "http" && (headerLines.length > 0 || headerEnvLines.length > 0 || bearerTokenEnvName !== void 0)) {
     try {
       requestHeaders = buildRequestHeaders(
         headerLines,
@@ -65820,14 +66290,17 @@ function parseInputs() {
   const devRaw = core.getInput("development-mode").trim().toLowerCase();
   const developmentMode = devRaw === "true";
   return {
+    transport,
     endpoint: rawEndpoint,
     safeEndpoint,
     requestHeaders,
+    developmentMode,
+    command,
+    workingDirectory,
     timeoutMs,
     failOn,
     format,
-    outputDirectory,
-    developmentMode
+    outputDirectory
   };
 }
 
@@ -65865,19 +66338,32 @@ ${md}
 var STATUS_ORDER = { PASS: 0, WARNING: 1, FAIL: 2 };
 async function main() {
   const inputs = parseInputs();
-  core4.info(`Checking MCP server: ${inputs.safeEndpoint}`);
-  if (inputs.developmentMode) {
-    core4.warning("development-mode is enabled - HTTP connections are allowed. Do not use in production.");
+  let report;
+  if (inputs.transport === "stdio") {
+    const commandLabel = `stdio:${inputs.command.trim().split(/\s+/)[0] ?? "unknown"}`;
+    core4.info(`Checking MCP server (stdio): ${commandLabel}`);
+    const cwdOpt = inputs.workingDirectory !== "" ? { cwd: inputs.workingDirectory } : {};
+    report = await runStdioCheck(
+      { command: inputs.command, ...cwdOpt },
+      { startupTimeoutMs: inputs.timeoutMs }
+    );
+  } else {
+    core4.info(`Checking MCP server: ${inputs.safeEndpoint}`);
+    if (inputs.developmentMode) {
+      core4.warning(
+        "development-mode is enabled - HTTP connections are allowed. Do not use in production."
+      );
+    }
+    if (Object.keys(inputs.requestHeaders).length > 0) {
+      const headerNames = Object.keys(inputs.requestHeaders).join(", ");
+      core4.info(`Using request headers: ${headerNames} (values masked)`);
+    }
+    report = await runCheck(inputs.endpoint, {
+      timeoutMs: inputs.timeoutMs,
+      allowHttp: inputs.developmentMode,
+      ...Object.keys(inputs.requestHeaders).length > 0 ? { requestHeaders: inputs.requestHeaders } : {}
+    });
   }
-  if (Object.keys(inputs.requestHeaders).length > 0) {
-    const headerNames = Object.keys(inputs.requestHeaders).join(", ");
-    core4.info(`Using request headers: ${headerNames} (values masked)`);
-  }
-  const report = await runCheck(inputs.endpoint, {
-    timeoutMs: inputs.timeoutMs,
-    allowHttp: inputs.developmentMode,
-    ...Object.keys(inputs.requestHeaders).length > 0 ? { requestHeaders: inputs.requestHeaders } : {}
-  });
   const allFindings = [
     ...report.findings,
     ...report.tools.flatMap((t) => t.findings)

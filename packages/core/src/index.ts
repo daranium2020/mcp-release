@@ -1,4 +1,5 @@
 export { runCheck, type CheckOptions } from "./check.js";
+export { runStdioCheck, type StdioCheckParams, type StdioCheckOptions } from "./stdio-check.js";
 export {
   type CheckReport,
   type Finding,
