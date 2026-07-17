@@ -12,6 +12,7 @@ const PASS_REPORT: CheckReport = {
   schemaVersion: "1",
   serverUrl: "https://example.com/mcp",
   checkedAt: "2026-01-01T00:00:00.000Z",
+  startedAt: "2026-01-01T00:00:00.000Z",
   durationMs: 42,
   overallStatus: "PASS",
   transport: {
@@ -21,6 +22,9 @@ const PASS_REPORT: CheckReport = {
     redirectCount: 0,
     headersAvailable: true,
   },
+  transportType: "http",
+  executionEnvironment: "browser",
+  mcpReleaseVersion: "0.2.1",
   protocolVersion: "1.0.0",
   serverInfo: { name: "test-server", version: "1.0.0" },
   findings: [
@@ -183,6 +187,33 @@ describe("CheckClient", () => {
     // "Overall Status" label is unique; PASS badges appear multiple times
     await waitFor(() => expect(screen.getByText("Overall Status")).toBeDefined());
     expect(screen.getAllByText("PASS").length).toBeGreaterThan(0);
+  });
+
+  it("shows Transport as HTTP/SSE for http reports", async () => {
+    vi.stubGlobal("fetch", mockFetchSuccess(PASS_REPORT));
+    render(<CheckClient />);
+    await user.type(screen.getByLabelText(/MCP Endpoint/i), "https://example.com/mcp");
+    await user.click(screen.getByRole("button", { name: /run release check/i }));
+    await waitFor(() => expect(screen.getByText("Transport")).toBeDefined());
+    expect(screen.getByText("HTTP/SSE")).toBeDefined();
+  });
+
+  it("shows Environment as Browser for browser reports", async () => {
+    vi.stubGlobal("fetch", mockFetchSuccess(PASS_REPORT));
+    render(<CheckClient />);
+    await user.type(screen.getByLabelText(/MCP Endpoint/i), "https://example.com/mcp");
+    await user.click(screen.getByRole("button", { name: /run release check/i }));
+    await waitFor(() => expect(screen.getByText("Environment")).toBeDefined());
+    expect(screen.getByText("Browser")).toBeDefined();
+  });
+
+  it("shows MCP Release version in meta", async () => {
+    vi.stubGlobal("fetch", mockFetchSuccess(PASS_REPORT));
+    render(<CheckClient />);
+    await user.type(screen.getByLabelText(/MCP Endpoint/i), "https://example.com/mcp");
+    await user.click(screen.getByRole("button", { name: /run release check/i }));
+    await waitFor(() => expect(screen.getByText("MCP Release")).toBeDefined());
+    expect(screen.getByText("v0.2.1")).toBeDefined();
   });
 
   // ---- FAIL rendering ----
