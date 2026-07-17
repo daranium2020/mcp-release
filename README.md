@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/@mcp-release/cli)](https://www.npmjs.com/package/@mcp-release/cli)
 [![npm downloads](https://img.shields.io/npm/dm/@mcp-release/cli)](https://www.npmjs.com/package/@mcp-release/cli)
 
-MCP Release checks a remote MCP server. It verifies the protocol handshake, discovers tools, validates their schemas, and checks network configuration. It does not execute tools or accept credentials.
+MCP Release validates MCP servers. It verifies the protocol handshake, discovers tools, validates their schemas, and checks for stdio protocol violations. Supports both HTTP/SSE remote servers and local stdio servers (spawned processes). It does not execute tools or accept credentials.
 
 **Web app:** https://mcprelease.dev
 **Demo endpoint:** https://mcp-release-fixture.vercel.app/mcp
@@ -37,6 +37,8 @@ npm install -g @mcp-release/cli
 npx -y @mcp-release/cli check https://your-mcp-server.example.com/mcp
 ```
 
+**HTTP/SSE endpoints:**
+
 ```bash
 # Public endpoint
 mcp-release check https://your-mcp-server.example.com/mcp
@@ -67,6 +69,24 @@ MCP_TOKEN=your-token mcp-release check https://staging.example.com/mcp \
   --bearer-token-env MCP_TOKEN --fail-on-warning
 ```
 
+**Local stdio servers (new in v0.2.0):**
+
+```bash
+# Spawn a local server by command string; validate over stdin/stdout
+mcp-release check --stdio --command "npx -y my-mcp-server"
+
+# With a working directory
+mcp-release check --stdio --command "node dist/server.js" --cwd /path/to/project
+
+# JSON output
+mcp-release check --stdio --command "node dist/server.js" --json
+
+# Write report to file
+mcp-release check --stdio --command "npx -y my-mcp-server" --json --out report.json
+```
+
+Stdio validation runs entirely locally. No data is sent to the web app or any remote service.
+
 **From this repo (without installing):**
 
 ```bash
@@ -88,12 +108,15 @@ node packages/cli/dist/index.js check https://mcp-release-fixture.vercel.app/mcp
 
 | Option | Description |
 |---|---|
-| `--header "Name: value"` | Add a request header. Repeatable. |
-| `--header-env "Name=VAR"` | Read a header value from an env var. Repeatable. |
-| `--bearer-token-env VAR` | Read a bearer token from an env var; sends `Authorization: Bearer <token>`. |
-| `--timeout-ms <ms>` | Request timeout in milliseconds (default: 10000). |
-| `--max-redirects <n>` | Maximum redirects to follow (default: 3). |
-| `--allow-http` | Allow HTTP connections for localhost/development. |
+| `--stdio` | Validate a local stdio server (spawned process). Requires `--command`. |
+| `--command <cmd>` | Command string to spawn the stdio server (e.g. `"npx -y my-mcp-server"`). |
+| `--cwd <dir>` | Working directory for the spawned process (stdio mode only). |
+| `--header "Name: value"` | Add a request header (HTTP mode). Repeatable. |
+| `--header-env "Name=VAR"` | Read a header value from an env var (HTTP mode). Repeatable. |
+| `--bearer-token-env VAR` | Read a bearer token from an env var; sends `Authorization: Bearer <token>` (HTTP mode). |
+| `--timeout-ms <ms>` | Request/startup timeout in milliseconds (default: 10000). |
+| `--max-redirects <n>` | Maximum redirects to follow (HTTP mode, default: 3). |
+| `--allow-http` | Allow HTTP connections for localhost/development (HTTP mode). |
 | `--json` | Print JSON report to stdout. |
 | `--markdown` | Print Markdown report to stdout. |
 | `--out <path>` | Write report to file (JSON by default; Markdown if `--markdown`). |
@@ -105,9 +128,11 @@ The GitHub Action supports public, staging, and authenticated MCP endpoints. Sec
 
 Reference by a tagged release or by commit SHA for pinned usage:
 
+**HTTP/SSE endpoint:**
+
 ```yaml
 - name: Validate MCP server
-  uses: daranium2020/mcp-release@v0.1.2
+  uses: daranium2020/mcp-release@v0.2.0
   with:
     endpoint: https://staging.example.com/mcp
     bearer-token-env: MCP_TOKEN   # reads token from env; never put secrets inline
@@ -118,15 +143,35 @@ Reference by a tagged release or by commit SHA for pinned usage:
     MCP_TOKEN: ${{ secrets.MCP_TOKEN }}
 ```
 
+**Local stdio server (new in v0.2.0):**
+
+```yaml
+- name: Validate local MCP server
+  uses: daranium2020/mcp-release@v0.2.0
+  with:
+    transport: stdio
+    command: npx -y my-mcp-server
+    working-directory: ./packages/my-server   # optional
+    fail-on: fail
+    format: markdown
+```
+
 Pass all secrets through the `env` block using GitHub Actions secrets (`${{ secrets.YOUR_SECRET }}`). Never put secret values directly in `with:` inputs or workflow YAML.
 
-**Auth inputs:**
+**All inputs:**
 
 | Input | Description |
 |---|---|
-| `bearer-token-env` | Name of an env var containing a bearer token. Sends `Authorization: Bearer <token>`. |
-| `header` | Newline-separated `Name: value` pairs added to every request. |
-| `header-env` | Newline-separated `Name=ENV_VAR` pairs. Values read from environment. |
+| `transport` | `http` (default) or `stdio`. |
+| `endpoint` | MCP endpoint URL (required when `transport: http`). |
+| `command` | Command to spawn the stdio server (required when `transport: stdio`). |
+| `working-directory` | Working directory for the spawned process (stdio mode). |
+| `bearer-token-env` | Name of an env var containing a bearer token. Sends `Authorization: Bearer <token>` (HTTP mode). |
+| `header` | Newline-separated `Name: value` pairs added to every request (HTTP mode). |
+| `header-env` | Newline-separated `Name=ENV_VAR` pairs. Values read from environment (HTTP mode). |
+| `fail-on` | `fail` (default) or `warning`. |
+| `timeout-ms` | Request/startup timeout in milliseconds. |
+| `format` | `json`, `markdown`, or `both`. |
 
 **Outputs:** `status`, `failures`, `warnings`, `tools`, `report-path`, `pass-count`, `warning-count`, `fail-count`, `report-json`, `report-markdown`
 
@@ -140,7 +185,8 @@ The action annotates the workflow job with findings and writes a summary to the 
 |---|---|
 | **Protocol** | MCP initialization handshake, protocol version negotiation, transport response codes |
 | **Tool schemas** | Tool names (non-empty, valid characters), descriptions, `inputSchema` (valid JSON Schema, Ajv-compilable), `outputSchema` (if present), duplicate names |
-| **Network safety** | SSRF protection, DNS pinning, redirect chain validation (up to 3 hops), HTTPS enforcement across all redirects |
+| **Network safety** (HTTP) | SSRF protection, DNS pinning, redirect chain validation (up to 3 hops), HTTPS enforcement across all redirects |
+| **Stdio transport** (stdio) | Non-JSON lines on stdout (`STDIO_UNEXPECTED_OUTPUT`), malformed MCP messages (`STDIO_FRAMING_ERROR`), response size limit (`STDIO_RESPONSE_SIZE_EXCEEDED`), unclean shutdown (`STDIO_SHUTDOWN_TIMEOUT`) |
 | **Reports** | Findings exportable as JSON or Markdown |
 
 **What is not checked:** tools are never invoked, authenticated endpoints are not validated, runtime correctness of tool responses is not assessed.
@@ -176,6 +222,7 @@ The action annotates the workflow job with findings and writes a summary to the 
 ### JSON (`schemaVersion: "1"`)
 
 ```jsonc
+// HTTP/SSE endpoint
 {
   "schemaVersion": "1",
   "serverUrl": "https://example.com/mcp",
@@ -183,6 +230,24 @@ The action annotates the workflow job with findings and writes a summary to the 
   "durationMs": 234,
   "overallStatus": "PASS",
   "transport": { "httpStatus": 200, "durationMs": 120, "redirectCount": 0 },
+  "protocolVersion": "1.0.0",
+  "serverInfo": { "name": "my-server", "version": "1.0.0" },
+  "findings": [
+    { "code": "INIT_OK", "severity": "PASS", "message": "MCP initialization succeeded" }
+  ],
+  "tools": [
+    { "name": "my_tool", "overallStatus": "PASS", "findings": [...] }
+  ]
+}
+
+// Stdio server — transport is null (N/A for spawned process)
+{
+  "schemaVersion": "1",
+  "serverUrl": "stdio:node",
+  "checkedAt": "2026-06-28T00:00:00.000Z",
+  "durationMs": 412,
+  "overallStatus": "PASS",
+  "transport": null,
   "protocolVersion": "1.0.0",
   "serverInfo": { "name": "my-server", "version": "1.0.0" },
   "findings": [

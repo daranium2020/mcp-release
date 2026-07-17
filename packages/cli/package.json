@@ -1,6 +1,6 @@
 {
   "name": "@mcp-release/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Release validation CLI for MCP servers",
   "license": "MIT",
   "repository": {

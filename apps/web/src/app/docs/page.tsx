@@ -88,6 +88,19 @@ mcp-release check https://your-mcp-server.example.com/mcp`}</code>
             <pre className={styles.pre}>
               <code>{`npx -y @mcp-release/cli check https://your-mcp-server.example.com/mcp`}</code>
             </pre>
+            <h3 className={styles.h3}>Local stdio server</h3>
+            <p>
+              The CLI can also validate MCP servers that communicate over
+              stdin/stdout (spawned processes). Validation runs entirely
+              locally; no data is sent to any remote service.
+            </p>
+            <pre className={styles.pre}>
+              <code>{`# Spawn a local server and validate over stdin/stdout
+mcp-release check --stdio --command "npx -y my-mcp-server"
+
+# With a working directory
+mcp-release check --stdio --command "node dist/server.js" --cwd ./packages/my-server`}</code>
+            </pre>
             <p>
               For auth options (bearer tokens, custom headers, localhost),
               see{" "}
@@ -151,12 +164,19 @@ mcp-release check https://your-mcp-server.example.com/mcp`}</code>
               </li>
               <li>Duplicate tool names</li>
             </ul>
-            <h3 className={styles.h3}>Network safety</h3>
+            <h3 className={styles.h3}>Network safety (HTTP/SSE)</h3>
             <ul className={styles.ul}>
               <li>SSRF protection (RFC 1918, loopback, link-local blocked)</li>
               <li>DNS pinning (pre-resolve, validate IP, pin TCP connection)</li>
               <li>Redirect chain validation (up to 3 hops)</li>
               <li>HTTPS enforcement across all redirects</li>
+            </ul>
+            <h3 className={styles.h3}>Stdio transport (CLI / GitHub Action)</h3>
+            <ul className={styles.ul}>
+              <li>Non-JSON lines written to stdout (logs must go to stderr)</li>
+              <li>Valid JSON that is not a valid MCP message</li>
+              <li>Response size limit (configurable; default 10 MB)</li>
+              <li>Unclean shutdown (process did not exit after stdin EOF)</li>
             </ul>
             <h3 className={styles.h3}>What is not checked</h3>
             <ul className={styles.ul}>
@@ -273,7 +293,7 @@ mcp-release check http://localhost:4000/mcp --allow-http`}</code>
             <h3 className={styles.h3}>GitHub Action</h3>
             <pre className={styles.pre}>
               <code>{`- name: Validate MCP server
-  uses: daranium2020/mcp-release@v0.1.2
+  uses: daranium2020/mcp-release@v0.2.0
   with:
     endpoint: https://staging.example.com/mcp
     bearer-token-env: MCP_TOKEN
@@ -501,11 +521,19 @@ pnpm lint`}</code>
               to run MCP Release checks in CI:
             </p>
             <pre className={styles.pre}>
-              <code>{`- uses: daranium2020/mcp-release@v0.1.2
+              <code>{`# HTTP/SSE endpoint
+- uses: daranium2020/mcp-release@v0.2.0
   with:
     endpoint: https://your-mcp-server.example.com/mcp
     fail-on: fail        # optional: fail (default) | warning
-    timeout-ms: 10000    # optional: 1000-30000`}</code>
+    timeout-ms: 10000    # optional: 1000-30000
+
+# Local stdio server (spawned process)
+- uses: daranium2020/mcp-release@v0.2.0
+  with:
+    transport: stdio
+    command: npx -y my-mcp-server
+    fail-on: fail`}</code>
             </pre>
             <p>
               The action annotates the job with findings and writes a summary
