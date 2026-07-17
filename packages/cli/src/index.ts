@@ -134,6 +134,7 @@ program
           },
           { startupTimeoutMs: options.timeoutMs },
         );
+        report = { ...report, mcpReleaseVersion: __CLI_VERSION__, executionEnvironment: "cli" as const };
       } catch (err) {
         process.stderr.write(
           `Error: ${err instanceof Error ? err.message : String(err)}\n`,
@@ -180,6 +181,7 @@ program
           allowPrivateNetworks: true, // CLI always allows private/internal networks
           ...(requestHeaders !== undefined ? { requestHeaders } : {}),
         });
+        report = { ...report, mcpReleaseVersion: __CLI_VERSION__, executionEnvironment: "cli" as const };
       } catch (err) {
         process.stderr.write(
           `Error: ${err instanceof Error ? err.message : String(err)}\n`,

@@ -131,6 +131,34 @@ export default function Results({ report, onReset }: Props) {
             <span className={styles.metaLabel}>Endpoint</span>
             <code className={styles.metaValue}>{hostname}</code>
           </div>
+          {report.transportType && (
+            <div className={styles.metaItem}>
+              <span className={styles.metaLabel}>Transport</span>
+              <code className={styles.metaValue}>
+                {report.transportType === "http" ? "HTTP/SSE" : report.transportType}
+              </code>
+            </div>
+          )}
+          {report.executionEnvironment && (
+            <div className={styles.metaItem}>
+              <span className={styles.metaLabel}>Environment</span>
+              <code className={styles.metaValue}>
+                {report.executionEnvironment === "browser"
+                  ? "Browser"
+                  : report.executionEnvironment === "cli"
+                    ? "CLI"
+                    : report.executionEnvironment === "github-actions"
+                      ? "GitHub Actions"
+                      : report.executionEnvironment}
+              </code>
+            </div>
+          )}
+          {report.mcpReleaseVersion && (
+            <div className={styles.metaItem}>
+              <span className={styles.metaLabel}>MCP Release</span>
+              <code className={styles.metaValue}>v{report.mcpReleaseVersion}</code>
+            </div>
+          )}
           {report.protocolVersion && (
             <div className={styles.metaItem}>
               <span className={styles.metaLabel}>Protocol</span>
@@ -142,8 +170,8 @@ export default function Results({ report, onReset }: Props) {
             <code className={styles.metaValue}>{report.durationMs}ms</code>
           </div>
           <div className={styles.metaItem}>
-            <span className={styles.metaLabel}>Checked</span>
-            <span className={styles.metaValue}>{formatTs(report.checkedAt)}</span>
+            <span className={styles.metaLabel}>Started at</span>
+            <span className={styles.metaValue}>{formatTs(report.startedAt ?? report.checkedAt)}</span>
           </div>
         </div>
       </div>

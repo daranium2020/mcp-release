@@ -75,6 +75,16 @@ export const CheckReport = z.object({
   durationMs: z.number(),
   overallStatus: FindingSeverity,
   transport: TransportMeta.nullable(),
+  // Added in v0.2.0 — distinguishes http from stdio so reporters can show
+  // transport-specific sections without relying on transport === null heuristics.
+  transportType: z.enum(["http", "stdio"]).optional(),
+  // ISO-8601 timestamp when validation started. Always set in new reports.
+  // Old saved reports only have checkedAt; reporters fall back to checkedAt.
+  startedAt: z.string().optional(),
+  // Set by CLI, GitHub Action, and browser in all new reports.
+  mcpReleaseVersion: z.string().optional(),
+  // Always set in new reports; optional for backward compatibility with old saved reports.
+  executionEnvironment: z.enum(["browser", "cli", "github-actions"]).optional(),
   protocolVersion: z.string().nullable(),
   serverInfo: z
     .object({
