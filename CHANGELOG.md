@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.2.0 - 2026-07-17
+
+### Added
+
+- **Stdio transport validation** — validate MCP servers that communicate over stdin/stdout (local spawned processes).
+  - CLI: `mcp-release check --stdio --command "npx -y my-mcp-server"` with optional `--cwd <dir>`.
+  - GitHub Action: `transport: stdio` input with `command` and `working-directory` inputs.
+  - `packages/core` exports `runStdioCheck(params, opts)` and the `StdioCheckParams` / `StdioCheckOptions` types.
+- **New finding codes** (`packages/core`):
+  - `STDIO_UNEXPECTED_OUTPUT` (WARNING) — non-JSON lines written to stdout; logs must go to stderr.
+  - `STDIO_FRAMING_ERROR` (FAIL) — valid JSON on stdout that is not a valid MCP message.
+  - `STDIO_RESPONSE_SIZE_EXCEEDED` (FAIL) — stdout exceeded the configured byte limit.
+  - `STDIO_SHUTDOWN_TIMEOUT` (WARNING) — server did not exit after stdin EOF and required SIGKILL.
+  - `STDIO_PROCESS_ERROR` (FAIL) — process could not be spawned or exited unexpectedly.
+- Safe environment inheritance: spawned processes receive a curated subset of `process.env` (`HOME`, `PATH`, `SHELL`, etc.); secrets must be injected via the workflow `env` block.
+- Shell-free command parsing: the command string (`"npx -y my-mcp-server"`) is tokenized locally without invoking a shell.
+- Shutdown sequence: stdin EOF → `shutdownTimeoutMs` (default 5 s) → `SIGTERM` → 2 s → `SIGKILL`.
+- Stdio fixture servers in `fixtures/servers/src/stdio/` for integration testing.
+- 18 new tests in `packages/core/tests/stdio-check.test.ts` covering all stdio finding codes.
+
+### Notes
+
+- The web checker at https://mcprelease.dev validates remote HTTP/SSE endpoints only. Stdio validation requires the CLI or GitHub Action.
+- `@mcp-release/cli` is bumped to 0.2.0 and **should be published to npm** with this release.
+- The GitHub Action (`daranium2020/mcp-release`) should be tagged `v0.2.0`.
+
 ## 0.1.2 - 2026-07-15
 
 ### Fixed
