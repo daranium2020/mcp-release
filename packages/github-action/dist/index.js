@@ -64537,6 +64537,16 @@ var CheckReport = external_exports.object({
   durationMs: external_exports.number(),
   overallStatus: FindingSeverity,
   transport: TransportMeta.nullable(),
+  // Added in v0.2.0 — distinguishes http from stdio so reporters can show
+  // transport-specific sections without relying on transport === null heuristics.
+  transportType: external_exports.enum(["http", "stdio"]).optional(),
+  // ISO-8601 timestamp when validation started. Always set in new reports.
+  // Old saved reports only have checkedAt; reporters fall back to checkedAt.
+  startedAt: external_exports.string().optional(),
+  // Set by CLI, GitHub Action, and browser in all new reports.
+  mcpReleaseVersion: external_exports.string().optional(),
+  // Always set in new reports; optional for backward compatibility with old saved reports.
+  executionEnvironment: external_exports.enum(["browser", "cli", "github-actions"]).optional(),
   protocolVersion: external_exports.string().nullable(),
   serverInfo: external_exports.object({
     name: external_exports.string().optional(),
@@ -65465,6 +65475,8 @@ async function runCheck(serverUrl, opts = {}) {
         redirectCount: 0,
         headersAvailable: false
       },
+      transportType: "http",
+      startedAt: checkedAt,
       protocolVersion: null,
       serverInfo: null,
       findings,
@@ -65509,6 +65521,8 @@ async function runCheck(serverUrl, opts = {}) {
       redirectCount: connectResult.redirectCount,
       headersAvailable: false
     },
+    transportType: "http",
+    startedAt: checkedAt,
     protocolVersion: connectResult.protocolVersion,
     serverInfo: connectResult.serverInfo,
     findings,
@@ -65763,7 +65777,8 @@ var DEFAULT_SHUTDOWN_TIMEOUT_MS = 5e3;
 var DEFAULT_MAX_RESPONSE_SIZE_BYTES = 10 * 1024 * 1024;
 function safeCommandLabel(command) {
   const first = command.trim().split(/\s+/)[0] ?? "unknown";
-  return `stdio:${redactString(first)}`;
+  const base = first.replace(/^.*[/\\]/, "");
+  return `stdio:${redactString(base || first)}`;
 }
 function buildReport(serverUrl, checkedAt, startMs, findings, tools, protocolVersion, serverInfo) {
   const allFindings = [...findings, ...tools.flatMap((t) => t.findings)];
@@ -65774,6 +65789,8 @@ function buildReport(serverUrl, checkedAt, startMs, findings, tools, protocolVer
     durationMs: Date.now() - startMs,
     overallStatus: worstSeverity(allFindings),
     transport: null,
+    transportType: "stdio",
+    startedAt: checkedAt,
     protocolVersion,
     serverInfo,
     findings,
@@ -66152,8 +66169,40 @@ function init(open, close) {
 
 // ../reporter/dist/index.js
 function toJson(report, pretty = true) {
+  if (report.transportType === "stdio") {
+    const { transport: _omit, ...rest } = report;
+    return JSON.stringify(rest, null, pretty ? 2 : 0);
+  }
   return JSON.stringify(report, null, pretty ? 2 : 0);
 }
+var REMEDIATION = {
+  TRANSPORT_ERROR: "Verify the server is running and the URL is reachable.",
+  AUTH_REQUIRED: "Pass credentials via `--header`, `--header-env`, or `--bearer-token-env`.",
+  REMOTE_HTTP_ERROR: "Check server logs for details of the unexpected HTTP response.",
+  HTTP_ERROR: "Verify the endpoint URL is correct and the server is accessible.",
+  TIMEOUT: "Increase `--timeout-ms` or check that the server responds promptly.",
+  REDIRECT_LIMIT_EXCEEDED: "Investigate the redirect chain; use `--max-redirects` to raise the limit.",
+  REDIRECT_LOOP: "Fix the redirect cycle in the server or proxy configuration.",
+  PROTOCOL_DOWNGRADE: "Ensure all redirects use HTTPS, not HTTP.",
+  SSRF_BLOCKED: "Only public HTTPS endpoints are accepted by the browser checker.",
+  HTTPS_REQUIRED: "Use an `https://` URL. HTTP connections are not allowed in production.",
+  EMBEDDED_CREDENTIALS: "Remove credentials from the URL. Use `--header` or `--bearer-token-env` instead.",
+  INIT_FAILURE: "Ensure the server completes MCP `initialize` / `initialized` handshake correctly.",
+  PROTOCOL_VERSION_MISMATCH: "Update the server to use a supported MCP protocol version.",
+  TOOLS_LIST_FAILURE: "Ensure the server implements the `tools/list` MCP method.",
+  TOOL_INVALID_NAME: "Rename the tool \u2014 names must match `^[a-zA-Z0-9_-]{1,64}$`.",
+  TOOL_MISSING_DESCRIPTION: "Add a `description` field to the tool definition.",
+  TOOL_EMPTY_DESCRIPTION: "Provide a meaningful, non-empty description for the tool.",
+  TOOL_INVALID_INPUT_SCHEMA: "Fix the JSON Schema in the tool's `inputSchema` field.",
+  TOOL_INVALID_OUTPUT_SCHEMA: "Fix the JSON Schema in the tool's `outputSchema` field.",
+  TOOL_UNSUPPORTED_SCHEMA_DRAFT: "Use JSON Schema draft-07 for tool input and output schemas.",
+  TOOL_DUPLICATE_NAME: "Ensure all tool names are unique within the server.",
+  STDIO_UNEXPECTED_OUTPUT: "Move all logging and debug output to stderr. Only MCP protocol messages should appear on stdout.",
+  STDIO_FRAMING_ERROR: "Each stdout line must be a complete, valid JSON-RPC message terminated by a single newline.",
+  STDIO_SHUTDOWN_TIMEOUT: "Ensure the process exits cleanly when stdin is closed (EOF).",
+  STDIO_PROCESS_ERROR: "Verify the command is correct and that the server starts without errors.",
+  STDIO_RESPONSE_SIZE_EXCEEDED: "Reduce the size of MCP protocol messages written to stdout."
+};
 function severityBadge(s) {
   if (s === "FAIL") return "\u{1F534} FAIL";
   if (s === "WARNING") return "\u{1F7E1} WARNING";
@@ -66161,6 +66210,17 @@ function severityBadge(s) {
 }
 function findingsTable(findings) {
   if (findings.length === 0) return "_No findings._\n";
+  const hasRemediation = findings.some((f) => REMEDIATION[f.code] !== void 0);
+  if (hasRemediation) {
+    const header2 = "| Severity | Code | Message | Remediation |\n|---|---|---|---|";
+    const rows2 = findings.map((f) => {
+      const rem = REMEDIATION[f.code] ?? "";
+      return `| ${severityBadge(f.severity)} | \`${f.code}\` | ${f.message} | ${rem} |`;
+    }).join("\n");
+    return `${header2}
+${rows2}
+`;
+  }
   const header = "| Severity | Code | Message |\n|---|---|---|";
   const rows = findings.map((f) => `| ${severityBadge(f.severity)} | \`${f.code}\` | ${f.message} |`).join("\n");
   return `${header}
@@ -66169,16 +66229,41 @@ ${rows}
 }
 function toMarkdown(report) {
   const lines = [];
+  const allFindings = [...report.findings, ...report.tools.flatMap((t) => t.findings)];
+  const passCount = allFindings.filter((f) => f.severity === "PASS").length;
+  const warnCount = allFindings.filter((f) => f.severity === "WARNING").length;
+  const failCount = allFindings.filter((f) => f.severity === "FAIL").length;
   lines.push(`## MCP Release Report`);
   lines.push(``);
   lines.push(`**Server:** \`${report.serverUrl}\``);
   lines.push(`**Status:** ${severityBadge(report.overallStatus)}`);
-  lines.push(`**Checked at:** ${report.checkedAt}`);
+  const transportLabel = report.transportType === "stdio" ? "stdio (local process)" : report.transportType === "http" ? "HTTP/SSE" : null;
+  if (transportLabel) {
+    lines.push(`**Transport:** ${transportLabel}`);
+  }
+  if (report.mcpReleaseVersion) {
+    lines.push(`**MCP Release:** v${report.mcpReleaseVersion}`);
+  }
+  lines.push(`**Started at:** ${report.startedAt ?? report.checkedAt}`);
   lines.push(`**Duration:** ${report.durationMs}ms`);
   if (report.protocolVersion) {
     lines.push(`**Protocol version:** ${report.protocolVersion}`);
   }
   lines.push(``);
+  lines.push(`| Passed | Warnings | Failures |`);
+  lines.push(`|---|---|---|`);
+  lines.push(`| ${passCount} | ${warnCount} | ${failCount} |`);
+  lines.push(``);
+  if (report.transportType === "stdio") {
+    lines.push(
+      `> **Privacy:** Validation ran locally on your machine or CI runner. No data was sent to MCP Release.`
+    );
+    lines.push(``);
+    if (report.tools.length > 0) {
+      lines.push(`> **Note:** Tools were discovered but not invoked.`);
+      lines.push(``);
+    }
+  }
   lines.push(`### Findings`);
   lines.push(``);
   lines.push(findingsTable(report.findings));
@@ -66347,6 +66432,7 @@ async function main() {
       { command: inputs.command, ...cwdOpt },
       { startupTimeoutMs: inputs.timeoutMs }
     );
+    report = { ...report, mcpReleaseVersion: "0.2.1", executionEnvironment: "github-actions" };
   } else {
     core4.info(`Checking MCP server: ${inputs.safeEndpoint}`);
     if (inputs.developmentMode) {
@@ -66363,6 +66449,7 @@ async function main() {
       allowHttp: inputs.developmentMode,
       ...Object.keys(inputs.requestHeaders).length > 0 ? { requestHeaders: inputs.requestHeaders } : {}
     });
+    report = { ...report, mcpReleaseVersion: "0.2.1", executionEnvironment: "github-actions" };
   }
   const allFindings = [
     ...report.findings,

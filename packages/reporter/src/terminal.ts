@@ -14,11 +14,41 @@ function printFinding(f: Finding, indent = "  "): string {
 export function toTerminal(report: CheckReport): string {
   const lines: string[] = [];
 
-  lines.push(kleur.bold(`\nMCP Release — ${report.serverUrl}`));
-  lines.push(`Status: ${severityColor(report.overallStatus)}`);
-  lines.push(`Duration: ${report.durationMs}ms  |  Checked at: ${report.checkedAt}`);
+  const allFindings = [...report.findings, ...report.tools.flatMap((t) => t.findings)];
+  const passCount = allFindings.filter((f) => f.severity === "PASS").length;
+  const warnCount = allFindings.filter((f) => f.severity === "WARNING").length;
+  const failCount = allFindings.filter((f) => f.severity === "FAIL").length;
+
+  const versionSuffix = report.mcpReleaseVersion ? ` v${report.mcpReleaseVersion}` : "";
+  lines.push(kleur.bold(`\nMCP Release${versionSuffix} — ${report.serverUrl}`));
+
+  const transportLabel =
+    report.transportType === "stdio"
+      ? "stdio"
+      : report.transportType === "http"
+        ? "HTTP/SSE"
+        : null;
+  if (transportLabel) {
+    lines.push(
+      `Transport: ${kleur.cyan(transportLabel)}  |  Status: ${severityColor(report.overallStatus)}`,
+    );
+  } else {
+    lines.push(`Status: ${severityColor(report.overallStatus)}`);
+  }
+
+  lines.push(
+    `Passed: ${passCount}  |  Warnings: ${warnCount}  |  Failures: ${failCount}  |  Duration: ${report.durationMs}ms`,
+  );
+  lines.push(`Started at: ${report.startedAt ?? report.checkedAt}`);
+
   if (report.protocolVersion) {
     lines.push(`Protocol: ${report.protocolVersion}`);
+  }
+
+  if (report.transportType === "stdio") {
+    lines.push(
+      kleur.dim("\nPrivacy: Validation ran locally. No data was sent to MCP Release."),
+    );
   }
 
   if (report.findings.length > 0) {
@@ -35,6 +65,9 @@ export function toTerminal(report: CheckReport): string {
       for (const f of tool.findings) {
         lines.push(printFinding(f, "    "));
       }
+    }
+    if (report.transportType === "stdio") {
+      lines.push(kleur.dim("\n  Tools were discovered but not invoked."));
     }
   }
 

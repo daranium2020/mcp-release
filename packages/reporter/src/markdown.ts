@@ -1,4 +1,5 @@
-import type { CheckReport, Finding } from "@mcp-release/core";
+import type { CheckReport, Finding, FindingCode } from "@mcp-release/core";
+import { REMEDIATION } from "./remediation.js";
 
 function severityBadge(s: string): string {
   if (s === "FAIL") return "🔴 FAIL";
@@ -8,6 +9,17 @@ function severityBadge(s: string): string {
 
 function findingsTable(findings: Finding[]): string {
   if (findings.length === 0) return "_No findings._\n";
+  const hasRemediation = findings.some((f) => REMEDIATION[f.code as FindingCode] !== undefined);
+  if (hasRemediation) {
+    const header = "| Severity | Code | Message | Remediation |\n|---|---|---|---|";
+    const rows = findings
+      .map((f) => {
+        const rem = REMEDIATION[f.code as FindingCode] ?? "";
+        return `| ${severityBadge(f.severity)} | \`${f.code}\` | ${f.message} | ${rem} |`;
+      })
+      .join("\n");
+    return `${header}\n${rows}\n`;
+  }
   const header = "| Severity | Code | Message |\n|---|---|---|";
   const rows = findings
     .map((f) => `| ${severityBadge(f.severity)} | \`${f.code}\` | ${f.message} |`)
@@ -18,16 +30,53 @@ function findingsTable(findings: Finding[]): string {
 export function toMarkdown(report: CheckReport): string {
   const lines: string[] = [];
 
+  const allFindings = [...report.findings, ...report.tools.flatMap((t) => t.findings)];
+  const passCount = allFindings.filter((f) => f.severity === "PASS").length;
+  const warnCount = allFindings.filter((f) => f.severity === "WARNING").length;
+  const failCount = allFindings.filter((f) => f.severity === "FAIL").length;
+
   lines.push(`## MCP Release Report`);
   lines.push(``);
   lines.push(`**Server:** \`${report.serverUrl}\``);
   lines.push(`**Status:** ${severityBadge(report.overallStatus)}`);
-  lines.push(`**Checked at:** ${report.checkedAt}`);
+
+  const transportLabel =
+    report.transportType === "stdio"
+      ? "stdio (local process)"
+      : report.transportType === "http"
+        ? "HTTP/SSE"
+        : null;
+  if (transportLabel) {
+    lines.push(`**Transport:** ${transportLabel}`);
+  }
+
+  if (report.mcpReleaseVersion) {
+    lines.push(`**MCP Release:** v${report.mcpReleaseVersion}`);
+  }
+
+  lines.push(`**Started at:** ${report.startedAt ?? report.checkedAt}`);
   lines.push(`**Duration:** ${report.durationMs}ms`);
+
   if (report.protocolVersion) {
     lines.push(`**Protocol version:** ${report.protocolVersion}`);
   }
+
   lines.push(``);
+  lines.push(`| Passed | Warnings | Failures |`);
+  lines.push(`|---|---|---|`);
+  lines.push(`| ${passCount} | ${warnCount} | ${failCount} |`);
+  lines.push(``);
+
+  if (report.transportType === "stdio") {
+    lines.push(
+      `> **Privacy:** Validation ran locally on your machine or CI runner. No data was sent to MCP Release.`,
+    );
+    lines.push(``);
+    if (report.tools.length > 0) {
+      lines.push(`> **Note:** Tools were discovered but not invoked.`);
+      lines.push(``);
+    }
+  }
 
   lines.push(`### Findings`);
   lines.push(``);

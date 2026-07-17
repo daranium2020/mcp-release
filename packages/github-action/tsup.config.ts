@@ -1,4 +1,7 @@
 import { defineConfig } from "tsup";
+import { readFileSync } from "node:fs";
+
+const { version } = JSON.parse(readFileSync("./package.json", "utf8")) as { version: string };
 
 export default defineConfig({
   entry: ["src/index.ts"],
@@ -16,6 +19,10 @@ export default defineConfig({
   sourcemap: false,
   minify: false,
   dts: false,
+  // Inject version from package.json at build time
+  define: {
+    __ACTION_VERSION__: JSON.stringify(version),
+  },
   // Silence "Found duplicate" warnings from bundling workspace packages
   silent: false,
 });

@@ -142,8 +142,8 @@ export default function Results({ report, onReset }: Props) {
             <code className={styles.metaValue}>{report.durationMs}ms</code>
           </div>
           <div className={styles.metaItem}>
-            <span className={styles.metaLabel}>Checked</span>
-            <span className={styles.metaValue}>{formatTs(report.checkedAt)}</span>
+            <span className={styles.metaLabel}>Started at</span>
+            <span className={styles.metaValue}>{formatTs(report.startedAt ?? report.checkedAt)}</span>
           </div>
         </div>
       </div>

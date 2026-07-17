@@ -11,6 +11,7 @@ import {
   DEFAULT_TIMEOUT_MS,
   MIN_TIMEOUT_MS,
   MAX_TIMEOUT_MS,
+  PRODUCT_VERSION,
 } from "../../../lib/constants";
 import { logCheckStart, logCheckComplete, type Outcome } from "../../../lib/usage-log";
 
@@ -200,7 +201,7 @@ export async function handleCheckRequest(
       ),
     );
 
-    const report = await Promise.race([
+    const rawReport = await Promise.race([
       validator(rawEndpoint.trim(), {
         timeoutMs,
         allowHttp: false,
@@ -214,6 +215,14 @@ export async function handleCheckRequest(
       }),
       execDeadline,
     ]);
+
+    // Enrich with browser-context metadata before returning to the client.
+    const report: CheckReport = {
+      ...rawReport,
+      startedAt: rawReport.checkedAt,
+      mcpReleaseVersion: PRODUCT_VERSION,
+      executionEnvironment: "browser",
+    };
 
     const outcome: Outcome =
       report.overallStatus === "PASS" ? "pass" :

@@ -293,7 +293,7 @@ mcp-release check http://localhost:4000/mcp --allow-http`}</code>
             <h3 className={styles.h3}>GitHub Action</h3>
             <pre className={styles.pre}>
               <code>{`- name: Validate MCP server
-  uses: daranium2020/mcp-release@v0.2.0
+  uses: daranium2020/mcp-release@v0.2.1
   with:
     endpoint: https://staging.example.com/mcp
     bearer-token-env: MCP_TOKEN
@@ -522,14 +522,14 @@ pnpm lint`}</code>
             </p>
             <pre className={styles.pre}>
               <code>{`# HTTP/SSE endpoint
-- uses: daranium2020/mcp-release@v0.2.0
+- uses: daranium2020/mcp-release@v0.2.1
   with:
     endpoint: https://your-mcp-server.example.com/mcp
     fail-on: fail        # optional: fail (default) | warning
     timeout-ms: 10000    # optional: 1000-30000
 
 # Local stdio server (spawned process)
-- uses: daranium2020/mcp-release@v0.2.0
+- uses: daranium2020/mcp-release@v0.2.1
   with:
     transport: stdio
     command: npx -y my-mcp-server

@@ -37,7 +37,10 @@ const DEFAULT_MAX_RESPONSE_SIZE_BYTES = 10 * 1024 * 1024;
 
 function safeCommandLabel(command: string): string {
   const first = command.trim().split(/\s+/)[0] ?? "unknown";
-  return `stdio:${redactString(first)}`;
+  // Strip directory components to avoid leaking home directory paths
+  // (e.g. /Users/alice/.nvm/bin/node → node, C:\Users\alice\bin\node.exe → node.exe)
+  const base = first.replace(/^.*[/\\]/, "");
+  return `stdio:${redactString(base || first)}`;
 }
 
 function buildReport(
@@ -57,6 +60,8 @@ function buildReport(
     durationMs: Date.now() - startMs,
     overallStatus: worstSeverity(allFindings),
     transport: null,
+    transportType: "stdio" as const,
+    startedAt: checkedAt,
     protocolVersion,
     serverInfo,
     findings,

@@ -6,6 +6,9 @@ import {
   type ToolReport,
 } from "@mcp-release/core";
 import { toJson, toMarkdown } from "@mcp-release/reporter";
+
+// Injected at build time by tsup define
+declare const __ACTION_VERSION__: string;
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseInputs } from "./inputs.js";
@@ -29,6 +32,7 @@ async function main(): Promise<void> {
       { command: inputs.command, ...cwdOpt },
       { startupTimeoutMs: inputs.timeoutMs },
     );
+    report = { ...report, mcpReleaseVersion: __ACTION_VERSION__, executionEnvironment: "github-actions" as const };
   } else {
     // ── HTTP transport ───────────────────────────────────────────────────────
     core.info(`Checking MCP server: ${inputs.safeEndpoint}`);
@@ -49,6 +53,7 @@ async function main(): Promise<void> {
         ? { requestHeaders: inputs.requestHeaders }
         : {}),
     });
+    report = { ...report, mcpReleaseVersion: __ACTION_VERSION__, executionEnvironment: "github-actions" as const };
   }
 
   // Count findings

@@ -98,7 +98,7 @@ npx -y @mcp-release/cli check --stdio --command "node dist/server.js" --cwd ./my
           </pre>
           <p className={styles.preLabel}>GitHub Actions:</p>
           <pre className={styles.pre}>
-            <code className={styles.preCode}>{`- uses: daranium2020/mcp-release@v0.2.0
+            <code className={styles.preCode}>{`- uses: daranium2020/mcp-release@v0.2.1
   with:
     transport: stdio
     command: npx -y my-mcp-server`}</code>
