@@ -33,6 +33,12 @@ export const FindingCode = z.enum([
   "INIT_OK",
   "TOOLS_LIST_OK",
   "TOOL_OK",
+  // Stdio transport
+  "STDIO_UNEXPECTED_OUTPUT",
+  "STDIO_FRAMING_ERROR",
+  "STDIO_SHUTDOWN_TIMEOUT",
+  "STDIO_PROCESS_ERROR",
+  "STDIO_RESPONSE_SIZE_EXCEEDED",
 ]);
 export type FindingCode = z.infer<typeof FindingCode>;
 

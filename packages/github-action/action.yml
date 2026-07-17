@@ -1,12 +1,28 @@
 name: 'MCP Release - Release Checker'
 description: >
-  Connects to a remote MCP server, validates tool definitions, and produces
-  a structured report. Tools are never invoked.
+  Validates an MCP server — remote (HTTP/SSE) or local (stdio) — validates tool
+  definitions, and produces a structured report. Tools are never invoked.
 
 inputs:
+  transport:
+    description: 'Transport to use: "http" (default) or "stdio"'
+    required: false
+    default: 'http'
   endpoint:
-    description: 'MCP server URL to validate (https:// required in production)'
-    required: true
+    description: 'MCP server URL to validate (https:// required in production). Required when transport is "http".'
+    required: false
+    default: ''
+  command:
+    description: >
+      Command to run the stdio MCP server. Required when transport is "stdio".
+      Example: "npx -y my-mcp-server" or "node ./dist/server.js"
+      Set credentials via the env block of the step, not here.
+    required: false
+    default: ''
+  working-directory:
+    description: 'Working directory for the stdio server process (used with transport: stdio)'
+    required: false
+    default: ''
   bearer-token-env:
     description: >
       Name of an environment variable that holds a Bearer token. The action reads
@@ -30,7 +46,7 @@ inputs:
     required: false
     default: ''
   timeout-ms:
-    description: 'Request timeout in milliseconds'
+    description: 'Request/startup timeout in milliseconds'
     required: false
     default: '10000'
   fail-on:

@@ -36,9 +36,9 @@ export default [
       "no-undef": "off",
     },
   },
-  // scripts/*.mjs — plain Node.js ES modules; no TypeScript parser needed.
+  // Plain Node.js ES modules (scripts, stdio fixtures) — no TypeScript parser.
   {
-    files: ["scripts/**/*.mjs"],
+    files: ["scripts/**/*.mjs", "fixtures/**/*.mjs"],
     languageOptions: {
       globals: {
         ...globals.node,
