@@ -288,7 +288,7 @@ The action annotates the workflow job with findings and writes a summary to the 
 | `AUTH_INVALID` | FAIL | 401 response with credentials (including RFC 6750 `error="invalid_token"`) |
 | `AUTH_EXPIRED` | FAIL | 401 response with credentials + explicit unambiguous expiry code: `error="expired"` or `error="token_expired"` |
 | `AUTH_FORBIDDEN` | FAIL | 403 response (insufficient permissions) |
-| `AUTH_SCENARIO_MISMATCH` | FAIL | Actual outcome did not match the declared `expect` block |
+| `SCENARIO_MISMATCH` | FAIL | Actual outcome did not match the declared `expect` block |
 
 **Limitation:** `AUTH_EXPIRED` is only produced when the server returns an unambiguous, expiry-specific `WWW-Authenticate: Bearer error=` value. The RFC 6750 standard code `error="invalid_token"` is classified as `AUTH_INVALID` because it covers expired, revoked, and malformed tokens — it is too broad to unambiguously signal expiry. Most OAuth 2.0 servers use `invalid_token` and will produce `AUTH_INVALID`. Response bodies and `error_description` fields are never read or included in reports.
 

@@ -110,7 +110,7 @@ function makeFailReport(): ConfigReport {
           serverInfo: null,
           findings: [
             { code: "AUTH_REQUIRED", severity: "WARNING", message: "Server requires authorization." },
-            { code: "AUTH_SCENARIO_MISMATCH", severity: "FAIL", message: "Scenario expected [result=pass] but got [result=WARNING, httpStatus=401]." },
+            { code: "SCENARIO_MISMATCH", severity: "FAIL", message: "Scenario expected [result=pass] but got [result=WARNING, httpStatus=401]." },
           ],
           tools: [],
           scenarioName: "broken",
@@ -176,7 +176,7 @@ describe("toTerminalConfig", () => {
 
   it("shows FAIL findings for mismatched scenarios", () => {
     const out = toTerminalConfig(makeFailReport());
-    expect(out).toContain("AUTH_SCENARIO_MISMATCH");
+    expect(out).toContain("SCENARIO_MISMATCH");
   });
 });
 
@@ -233,7 +233,7 @@ describe("toMarkdownConfig", () => {
 
   it("shows FAIL finding details for mismatched scenarios", () => {
     const out = toMarkdownConfig(makeFailReport());
-    expect(out).toContain("AUTH_SCENARIO_MISMATCH");
+    expect(out).toContain("SCENARIO_MISMATCH");
   });
 });
 
@@ -363,8 +363,8 @@ describe("REMEDIATION entries for v0.3.0 codes", () => {
     expect(REMEDIATION["RETRY_EXHAUSTED"]).toBeDefined();
   });
 
-  it("AUTH_SCENARIO_MISMATCH has a remediation entry", async () => {
+  it("SCENARIO_MISMATCH has a remediation entry", async () => {
     const { REMEDIATION } = await import("@mcp-release/reporter");
-    expect(REMEDIATION["AUTH_SCENARIO_MISMATCH"]).toBeDefined();
+    expect(REMEDIATION["SCENARIO_MISMATCH"]).toBeDefined();
   });
 });

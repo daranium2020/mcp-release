@@ -4,7 +4,7 @@
  * Tests:
  *   - Expected positive scenario (valid server → pass)
  *   - Expected negative scenario (401 expected → matched=true)
- *   - Scenario mismatch (expected pass, got 401 → matched=false, AUTH_SCENARIO_MISMATCH)
+ *   - Scenario mismatch (expected pass, got 401 → matched=false, SCENARIO_MISMATCH)
  *   - 429 retry with Retry-After → succeeds on attempt 2
  *   - Retry exhaustion (always 429) → RETRY_EXHAUSTED
  *   - Transient failure retry (500 once, then pass) → matched=true, attempts=2
@@ -18,6 +18,7 @@ import {
   startMissingTokenServer,
   startInvalidTokenServer,
   startExpiredTokenServer,
+  startForbiddenResourceServer,
   startRateLimitThenSuccessServer,
   startAlwaysRateLimitServer,
   startTransientFailureServer,
@@ -110,17 +111,17 @@ describe("runScenarios — expected negative auth scenario", () => {
     expect(result.actual.result).toBe("WARNING");
   }, TIMEOUT);
 
-  it("no AUTH_SCENARIO_MISMATCH when expectation is met", async () => {
+  it("no SCENARIO_MISMATCH when expectation is met", async () => {
     const scenarios: ScenarioInput[] = [
       { name: "expect-401", extraHeaders: {}, removeHeaders: [], expected: { httpStatus: 401 } },
     ];
     const [result] = await runScenarios(server.url, scenarios, DEV);
-    expect(result.report.findings.some((f) => f.code === "AUTH_SCENARIO_MISMATCH")).toBe(false);
+    expect(result.report.findings.some((f) => f.code === "SCENARIO_MISMATCH")).toBe(false);
   }, TIMEOUT);
 });
 
 // ---------------------------------------------------------------------------
-// 3. Scenario mismatch — expected pass, got 401 → AUTH_SCENARIO_MISMATCH
+// 3. Scenario mismatch — expected pass, got 401 → SCENARIO_MISMATCH
 // ---------------------------------------------------------------------------
 
 describe("runScenarios — scenario mismatch", () => {
@@ -136,12 +137,12 @@ describe("runScenarios — scenario mismatch", () => {
     expect(result.matched).toBe(false);
   }, TIMEOUT);
 
-  it("AUTH_SCENARIO_MISMATCH finding added when mismatched", async () => {
+  it("SCENARIO_MISMATCH finding added when mismatched", async () => {
     const scenarios: ScenarioInput[] = [
       { name: "wrong-expect", extraHeaders: {}, removeHeaders: [], expected: { result: "pass" } },
     ];
     const [result] = await runScenarios(server.url, scenarios, DEV);
-    expect(result.report.findings.some((f) => f.code === "AUTH_SCENARIO_MISMATCH")).toBe(true);
+    expect(result.report.findings.some((f) => f.code === "SCENARIO_MISMATCH")).toBe(true);
   }, TIMEOUT);
 
   it("buildConfigReport marks overallStatus=FAIL when any scenario mismatches", async () => {
@@ -647,6 +648,104 @@ describe("runScenarios — SCENARIO_TIMEOUT as hard wall-clock deadline", () => 
     expect(result.report.findings.some((f) => f.code === "RESPONSE_TIMEOUT")).toBe(true);
     expect(result.attempts).toBe(1);
   }, SLOW);
+});
+
+// ---------------------------------------------------------------------------
+// 3d. SCENARIO_MISMATCH — exact codes for every mismatch category
+// ---------------------------------------------------------------------------
+
+describe("runScenarios — SCENARIO_MISMATCH exact codes", () => {
+  it("unexpected 401 (invalid credentials) includes AUTH_INVALID and SCENARIO_MISMATCH", async () => {
+    // Server always returns 401 with error="invalid_token"; we send credentials
+    // and expect pass → mismatch adds SCENARIO_MISMATCH alongside AUTH_INVALID.
+    const srv = await startInvalidTokenServer();
+    try {
+      const [result] = await runScenarios(
+        srv.url,
+        [{ name: "wrong-expect", extraHeaders: { Authorization: "Bearer bad" }, removeHeaders: [], expected: { result: "pass" } }],
+        DEV,
+      );
+      expect(result.matched).toBe(false);
+      expect(result.report.findings.some((f) => f.code === "AUTH_INVALID")).toBe(true);
+      expect(result.report.findings.some((f) => f.code === "SCENARIO_MISMATCH")).toBe(true);
+      // Must NOT emit the old auth-specific code
+      expect(result.report.findings.some((f) => (f.code as string) === "AUTH_SCENARIO_MISMATCH")).toBe(false);
+    } finally {
+      await srv.close();
+    }
+  }, TIMEOUT);
+
+  it("unexpected 403 includes AUTH_FORBIDDEN and SCENARIO_MISMATCH", async () => {
+    // Server returns 403; we expect pass → mismatch adds SCENARIO_MISMATCH alongside AUTH_FORBIDDEN.
+    const srv = await startForbiddenResourceServer();
+    try {
+      const [result] = await runScenarios(
+        srv.url,
+        [{ name: "wrong-expect", extraHeaders: { Authorization: "Bearer tok" }, removeHeaders: [], expected: { result: "pass" } }],
+        DEV,
+      );
+      expect(result.matched).toBe(false);
+      expect(result.report.findings.some((f) => f.code === "AUTH_FORBIDDEN")).toBe(true);
+      expect(result.report.findings.some((f) => f.code === "SCENARIO_MISMATCH")).toBe(true);
+      expect(result.report.findings.some((f) => (f.code as string) === "AUTH_SCENARIO_MISMATCH")).toBe(false);
+    } finally {
+      await srv.close();
+    }
+  }, TIMEOUT);
+
+  it("retry exhaustion includes RATE_LIMITED, RETRY_EXHAUSTED, and SCENARIO_MISMATCH", async () => {
+    // Always-rate-limit server; maxAttempts=2; expect pass → all three codes present.
+    const srv = await startAlwaysRateLimitServer("0");
+    try {
+      const [result] = await runScenarios(
+        srv.url,
+        [{ name: "exhaust", extraHeaders: {}, removeHeaders: [], expected: { result: "pass" } }],
+        DEV,
+        { maxAttempts: 2, backoffMs: 50, retryOn: ["rate-limit"] },
+      );
+      expect(result.matched).toBe(false);
+      expect(result.report.findings.some((f) => f.code === "RATE_LIMITED")).toBe(true);
+      expect(result.report.findings.some((f) => f.code === "RETRY_EXHAUSTED")).toBe(true);
+      expect(result.report.findings.some((f) => f.code === "SCENARIO_MISMATCH")).toBe(true);
+      expect(result.report.findings.some((f) => (f.code as string) === "AUTH_SCENARIO_MISMATCH")).toBe(false);
+    } finally {
+      await srv.close();
+    }
+  }, SLOW);
+
+  it("timeout expectation mismatch includes RESPONSE_TIMEOUT and SCENARIO_MISMATCH", async () => {
+    // Server never responds; we expect pass → RESPONSE_TIMEOUT + SCENARIO_MISMATCH.
+    const srv = await startResponseTimeoutServer();
+    try {
+      const [result] = await runScenarios(
+        srv.url,
+        [{ name: "timeout-mismatch", extraHeaders: {}, removeHeaders: [], expected: { result: "pass" } }],
+        { allowHttp: true, responseTimeoutMs: 200, timeoutMs: 5000 },
+      );
+      expect(result.matched).toBe(false);
+      expect(result.report.findings.some((f) => f.code === "RESPONSE_TIMEOUT")).toBe(true);
+      expect(result.report.findings.some((f) => f.code === "SCENARIO_MISMATCH")).toBe(true);
+      expect(result.report.findings.some((f) => (f.code as string) === "AUTH_SCENARIO_MISMATCH")).toBe(false);
+    } finally {
+      await srv.close();
+    }
+  }, SLOW);
+
+  it("matched negative scenario does NOT include SCENARIO_MISMATCH", async () => {
+    // We expect httpStatus=401 and the server returns 401 → matched=true, no SCENARIO_MISMATCH.
+    const srv = await startMissingTokenServer();
+    try {
+      const [result] = await runScenarios(
+        srv.url,
+        [{ name: "expect-401", extraHeaders: {}, removeHeaders: [], expected: { httpStatus: 401 } }],
+        DEV,
+      );
+      expect(result.matched).toBe(true);
+      expect(result.report.findings.some((f) => f.code === "SCENARIO_MISMATCH")).toBe(false);
+    } finally {
+      await srv.close();
+    }
+  }, TIMEOUT);
 });
 
 // ---------------------------------------------------------------------------

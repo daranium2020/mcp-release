@@ -6,7 +6,7 @@ export const REMEDIATION: Partial<Record<FindingCode, string>> = {
   AUTH_INVALID: "The credentials were rejected. Check they are correct and not expired. Note: RFC 6750 error=\"invalid_token\" produces AUTH_INVALID, not AUTH_EXPIRED — because that code covers expired, revoked, and malformed tokens and is too broad for an expiry-specific classification.",
   AUTH_EXPIRED: "The credentials have expired. This code is only produced when the server explicitly returns an unambiguous expiry indicator (error=\"expired\" or error=\"token_expired\"). Obtain new credentials and retry.",
   AUTH_FORBIDDEN: "Verify the credentials have the required permissions for this endpoint.",
-  AUTH_SCENARIO_MISMATCH: "Review the scenario `expect` block — the actual outcome did not match.",
+  SCENARIO_MISMATCH: "Review the scenario `expect` block — the actual outcome did not match.",
   RATE_LIMITED: "Reduce request frequency, or add `retries.maxAttempts` and `retries.retryOn: [rate-limit]` to the config to retry automatically.",
   RETRY_AFTER_INVALID: "The server returned a Retry-After value that is not a valid integer or HTTP date.",
   RETRY_EXHAUSTED: "All configured retry attempts failed. Check server health or increase `retries.maxAttempts`.",

@@ -10,7 +10,7 @@ export const FindingCode = z.enum([
   "AUTH_INVALID",
   "AUTH_EXPIRED",
   "AUTH_FORBIDDEN",
-  "AUTH_SCENARIO_MISMATCH",
+  "SCENARIO_MISMATCH",
   "REMOTE_HTTP_ERROR",
   "HTTP_ERROR",
   "TIMEOUT",

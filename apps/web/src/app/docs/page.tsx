@@ -513,7 +513,7 @@ scenarios:
             </ul>
             <p>
               When the actual outcome does not match, MCP Release adds{" "}
-              <code className={styles.code}>AUTH_SCENARIO_MISMATCH</code>{" "}
+              <code className={styles.code}>SCENARIO_MISMATCH</code>{" "}
               (FAIL) to the findings and the overall config run status is FAIL.
             </p>
             <h3 className={styles.h3}>Running config scenarios</h3>

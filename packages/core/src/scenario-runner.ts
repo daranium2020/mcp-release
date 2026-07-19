@@ -366,7 +366,7 @@ async function runSingleScenario(
     const mismatchFindings = [
       ...finalReport.findings,
       makeFinding(
-        "AUTH_SCENARIO_MISMATCH",
+        "SCENARIO_MISMATCH",
         "FAIL",
         `Scenario "${scenario.name}" expected [${expectedDesc}] but got [${actualDesc}].`,
         { scenario: scenario.name, expected: scenario.expected, actual: { result: actualResult, httpStatus: actualHttpStatus } },

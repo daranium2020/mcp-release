@@ -55,7 +55,7 @@ export function toTerminalConfig(report: ConfigReport): string {
 
     // Show FAIL findings for non-matching or failed scenarios
     if (!s.matched || s.report.overallStatus === "FAIL") {
-      const failFindings = s.report.findings.filter((f) => f.severity === "FAIL" || f.code === "AUTH_SCENARIO_MISMATCH");
+      const failFindings = s.report.findings.filter((f) => f.severity === "FAIL" || f.code === "SCENARIO_MISMATCH");
       for (const f of failFindings) {
         lines.push(kleur.dim(`      [${f.code}] ${f.message}`));
       }
