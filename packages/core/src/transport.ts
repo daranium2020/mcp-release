@@ -62,6 +62,14 @@ export type ConnectOptions = {
    * Added in v0.3.0 for fine-grained timeout classification.
    */
   responseTimeoutMs?: number;
+  /**
+   * When provided, aborting this signal immediately cancels any in-flight
+   * connection or HTTP request and causes ScenarioTimeoutTransportError to
+   * propagate. check.ts classifies that as SCENARIO_TIMEOUT, which takes
+   * precedence over CONNECT_TIMEOUT and RESPONSE_TIMEOUT.
+   * Set only by the scenario runner — never by the web API.
+   */
+  scenarioSignal?: AbortSignal;
 };
 
 export type ConnectResult = {
@@ -106,6 +114,18 @@ export class AuthChallengeTransportError extends TransportError {
   ) {
     super("Authentication required (HTTP 401)", undefined, selectedIpFamily);
     this.name = "AuthChallengeTransportError";
+  }
+}
+
+/**
+ * Thrown when the scenario-level AbortSignal fires (total budget exceeded).
+ * Propagated unchanged so check.ts can emit SCENARIO_TIMEOUT rather than
+ * CONNECT_TIMEOUT or RESPONSE_TIMEOUT, which are per-attempt findings.
+ */
+export class ScenarioTimeoutTransportError extends TransportError {
+  constructor() {
+    super("Scenario timeout");
+    this.name = "ScenarioTimeoutTransportError";
   }
 }
 
@@ -280,6 +300,7 @@ export async function connectToMcpServer(
   const maxRedirects = opts.maxRedirects ?? MAX_REDIRECTS_DEFAULT;
   const ssrfOpts = opts.ssrf ?? {};
   const requestHeaders = opts.requestHeaders ?? {};
+  const scenarioSignal = opts.scenarioSignal;
 
   // Resolve DNS and validate URL — returns pinned IPs for HTTPS
   let resolvedUrl: Awaited<ReturnType<typeof resolveUrlForPinning>>;
@@ -380,9 +401,13 @@ export async function connectToMcpServer(
 
     const existingSignal =
       init?.signal instanceof AbortSignal ? init.signal : undefined;
-    const mergedSignal = existingSignal
-      ? AbortSignal.any([timeoutController.signal, existingSignal])
-      : timeoutController.signal;
+    // Merge: response-timeout controller + optional SDK signal + scenario deadline.
+    // Scenario signal is checked FIRST in the catch block to enforce precedence.
+    const abortSignals: AbortSignal[] = [timeoutController.signal];
+    if (existingSignal) abortSignals.push(existingSignal);
+    if (scenarioSignal) abortSignals.push(scenarioSignal);
+    const mergedSignal =
+      abortSignals.length === 1 ? abortSignals[0]! : AbortSignal.any(abortSignals);
 
     const fetchInit: RequestInit = {
       ...init,
@@ -395,6 +420,10 @@ export async function connectToMcpServer(
       response = await baseFetch(urlStr, fetchInit);
     } catch (fetchErr) {
       clearTimeout(timer);
+      // Scenario deadline takes precedence — check it before the response timer.
+      if (scenarioSignal?.aborted) {
+        throw new ScenarioTimeoutTransportError();
+      }
       // If our response timeout fired, re-throw as a named TransportError so
       // check.ts can classify it as RESPONSE_TIMEOUT rather than CONNECT_TIMEOUT.
       if (responseTimedOut || (fetchErr instanceof DOMException && fetchErr.name === "AbortError")) {
@@ -539,25 +568,48 @@ export async function connectToMcpServer(
   // already settled via the timeoutPromise branch.
   connectPromise.catch(() => undefined);
 
+  // Scenario deadline races as a separate promise so it can interrupt the
+  // TCP/TLS phase (before fetchChain runs). When the signal fires, it wins
+  // over CONNECT_TIMEOUT and RESPONSE_TIMEOUT regardless of order.
+  const scenarioDeadlinePromise: Promise<never> | null = scenarioSignal
+    ? new Promise<never>((_, reject) => {
+        if (scenarioSignal.aborted) {
+          reject(new ScenarioTimeoutTransportError());
+          return;
+        }
+        scenarioSignal.addEventListener("abort", () => {
+          reject(new ScenarioTimeoutTransportError());
+        }, { once: true });
+      })
+    : null;
+
   // The outer backstop emits CONNECT_TIMEOUT if TCP/TLS never established, or
   // RESPONSE_TIMEOUT if TCP connected but no HTTP response arrived in time.
-  // Reading tcpConnected (set by the connector callback) at fire-time means the
-  // correct code is produced regardless of which setTimeout fires first — no
-  // +1 ms offset is needed to resolve timer-ordering races.
+  // Checks scenarioSignal at fire-time so that if both timers expire
+  // simultaneously the scenario deadline wins deterministically.
   const timeoutPromise = new Promise<never>((_, reject) =>
     setTimeout(
-      () => reject(new TransportError(
-        tcpConnected ? "Response timeout" : "Connection timeout",
-      )),
+      () => {
+        if (scenarioSignal?.aborted) {
+          reject(new ScenarioTimeoutTransportError());
+        } else {
+          reject(new TransportError(
+            tcpConnected ? "Response timeout" : "Connection timeout",
+          ));
+        }
+      },
       timeoutMs,
     ),
   );
+
+  const outerRacers: Array<Promise<unknown>> = [connectPromise, timeoutPromise];
+  if (scenarioDeadlinePromise) outerRacers.push(scenarioDeadlinePromise);
 
   let protocolVersion = "unknown";
   let serverInfo: { name?: string; version?: string } | null = null;
 
   try {
-    await Promise.race([connectPromise, timeoutPromise]);
+    await Promise.race(outerRacers);
     const info = mcpClient.getServerVersion();
     if (info) {
       protocolVersion = info.version ?? "unknown";

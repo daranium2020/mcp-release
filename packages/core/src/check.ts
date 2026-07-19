@@ -1,5 +1,5 @@
 import { type CheckReport, makeFinding, worstSeverity, type Finding } from "./report.js";
-import { connectToMcpServer, listTools, TransportError, RateLimitTransportError, AuthChallengeTransportError, type ConnectOptions } from "./transport.js";
+import { connectToMcpServer, listTools, TransportError, RateLimitTransportError, AuthChallengeTransportError, ScenarioTimeoutTransportError, type ConnectOptions } from "./transport.js";
 import { validateTools } from "./validator.js";
 import { SsrfError } from "./ssrf.js";
 import { redactUrl } from "./redact.js";
@@ -115,6 +115,12 @@ export type CheckOptions = {
    * Added in v0.3.0 for fine-grained timeout classification.
    */
   responseTimeoutMs?: number;
+  /**
+   * AbortSignal from the scenario runner's deadline timer. When fired,
+   * runCheck returns immediately with a SCENARIO_TIMEOUT finding.
+   * Never set by the web API — only by the scenario runner.
+   */
+  scenarioSignal?: AbortSignal;
 };
 
 export async function runCheck(
@@ -139,6 +145,7 @@ export async function runCheck(
     if (opts.maxRedirects !== undefined) connectOpts.maxRedirects = opts.maxRedirects;
     if (opts.requestHeaders !== undefined) connectOpts.requestHeaders = opts.requestHeaders;
     if (opts.responseTimeoutMs !== undefined) connectOpts.responseTimeoutMs = opts.responseTimeoutMs;
+    if (opts.scenarioSignal !== undefined) connectOpts.scenarioSignal = opts.scenarioSignal;
     connectResult = await connectToMcpServer(serverUrl, connectOpts);
   } catch (err) {
     const durationMs = Date.now() - startMs;
@@ -201,6 +208,17 @@ export async function runCheck(
           ),
         );
       }
+    } else if (err instanceof ScenarioTimeoutTransportError) {
+      // Scenario wall-clock budget expired while a request was in flight.
+      // Classified as SCENARIO_TIMEOUT (not CONNECT_TIMEOUT / RESPONSE_TIMEOUT)
+      // because it reflects the total scenario budget, not a per-attempt limit.
+      findings.push(
+        makeFinding(
+          "SCENARIO_TIMEOUT",
+          "FAIL",
+          "Scenario deadline exceeded while the request was in flight.",
+        ),
+      );
     } else if (err instanceof RateLimitTransportError) {
       // 429 Too Many Requests — carries Retry-After from the response header.
       const retryAfterMs = parseRetryAfterMs(err.retryAfter);

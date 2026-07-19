@@ -537,52 +537,115 @@ describe("runScenarios — retry category isolation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 10. SCENARIO_TIMEOUT — fires at deadline and is never retried
+// 10. SCENARIO_TIMEOUT — hard wall-clock deadline (aborts in-flight requests)
 // ---------------------------------------------------------------------------
 
-describe("runScenarios — SCENARIO_TIMEOUT", () => {
+describe("runScenarios — SCENARIO_TIMEOUT as hard wall-clock deadline", () => {
   let server: FixtureServer;
   beforeAll(async () => { server = await startResponseTimeoutServer(); });
   afterAll(async () => server.close());
 
-  it("emits SCENARIO_TIMEOUT when scenario deadline is exceeded", async () => {
-    // Attempt 1: RESPONSE_TIMEOUT after ~200 ms. Backoff 150 ms. Attempt 2
-    // deadline check: ~350 ms > 300 ms budget → SCENARIO_TIMEOUT fires before
-    // the second request starts.
+  it("SCENARIO_TIMEOUT when scenarioTimeoutMs fires during a hanging first attempt", async () => {
+    // The scenario budget (200ms) expires while attempt 1 is in-flight
+    // waiting for a response (responseTimeoutMs=2000ms). The scenario signal
+    // aborts the request → runCheck returns SCENARIO_TIMEOUT, not RESPONSE_TIMEOUT.
     const [result] = await runScenarios(
       server.url,
-      [{ name: "deadline", extraHeaders: {}, removeHeaders: [], expected: {} }],
-      { allowHttp: true, responseTimeoutMs: 200, timeoutMs: 5000 },
-      { maxAttempts: 5, backoffMs: 150, retryOn: ["response-timeout"] },
-      300,
+      [{ name: "short-budget", extraHeaders: {}, removeHeaders: [], expected: {} }],
+      { allowHttp: true, responseTimeoutMs: 2000, timeoutMs: 5000 },
+      { maxAttempts: 3, backoffMs: 1000, retryOn: ["response-timeout"] },
+      200,
     );
     expect(result.report.findings.some((f) => f.code === "SCENARIO_TIMEOUT")).toBe(true);
+    expect(result.report.findings.some((f) => f.code === "RESPONSE_TIMEOUT")).toBe(false);
+    expect(result.attempts).toBe(1);
   }, SLOW);
 
-  it("SCENARIO_TIMEOUT reports attempts=1 (only completed requests count)", async () => {
-    // The deadline fires at the top of iteration 2 — before the second request
-    // starts — so only 1 request was actually made.
+  it("SCENARIO_TIMEOUT (not RESPONSE_TIMEOUT) when responseMs fires first without scenario signal", async () => {
+    // Baseline: responseTimeoutMs fires first → RESPONSE_TIMEOUT, not SCENARIO_TIMEOUT.
     const [result] = await runScenarios(
       server.url,
-      [{ name: "deadline-attempts", extraHeaders: {}, removeHeaders: [], expected: {} }],
+      [{ name: "resp-first", extraHeaders: {}, removeHeaders: [], expected: {} }],
       { allowHttp: true, responseTimeoutMs: 200, timeoutMs: 5000 },
-      { maxAttempts: 5, backoffMs: 150, retryOn: ["response-timeout"] },
-      300,
     );
-    expect(result.attempts).toBe(1);
+    expect(result.report.findings.some((f) => f.code === "RESPONSE_TIMEOUT")).toBe(true);
+    expect(result.report.findings.some((f) => f.code === "SCENARIO_TIMEOUT")).toBe(false);
+  }, SLOW);
+
+  it("SCENARIO_TIMEOUT (not CONNECT_TIMEOUT) when deadline fires during TLS connect", async () => {
+    // connectTimeoutServer never completes TLS. scenarioTimeoutMs (200ms) fires
+    // before the per-attempt timeoutMs (2000ms) → SCENARIO_TIMEOUT, not CONNECT_TIMEOUT.
+    const ctServer = await startConnectTimeoutServer();
+    try {
+      const [result] = await runScenarios(
+        ctServer.url,
+        [{ name: "scenario-vs-connect", extraHeaders: {}, removeHeaders: [], expected: {} }],
+        { allowPrivateNetworks: true, timeoutMs: 2000, responseTimeoutMs: 5000 },
+        undefined,
+        200,
+      );
+      expect(result.report.findings.some((f) => f.code === "SCENARIO_TIMEOUT")).toBe(true);
+      expect(result.report.findings.some((f) => f.code === "CONNECT_TIMEOUT")).toBe(false);
+      expect(result.attempts).toBe(1);
+    } finally {
+      await ctServer.close();
+    }
+  }, SLOW);
+
+  it("SCENARIO_TIMEOUT after retries consume most of the budget (deadline fires mid-attempt)", async () => {
+    // Attempt 1 completes with RESPONSE_TIMEOUT (~200ms). Backoff 50ms.
+    // Attempt 2 starts at ~250ms. Scenario budget (400ms) fires at ~400ms
+    // while attempt 2 is in-flight → SCENARIO_TIMEOUT, attempts=2.
+    const [result] = await runScenarios(
+      server.url,
+      [{ name: "budget-consumed", extraHeaders: {}, removeHeaders: [], expected: {} }],
+      { allowHttp: true, responseTimeoutMs: 200, timeoutMs: 5000 },
+      { maxAttempts: 5, backoffMs: 50, retryOn: ["response-timeout"] },
+      400,
+    );
     expect(result.report.findings.some((f) => f.code === "SCENARIO_TIMEOUT")).toBe(true);
+    expect(result.attempts).toBeGreaterThanOrEqual(2);
+    expect(result.retryCategory).toBeUndefined(); // cleared when deadline fires
+  }, SLOW);
+
+  it("SCENARIO_TIMEOUT when deadline fires during backoff (next request never starts)", async () => {
+    // Attempt 1 completes with RESPONSE_TIMEOUT (~200ms). Backoff 500ms.
+    // Scenario budget (350ms) fires at ~350ms during backoff → SCENARIO_TIMEOUT,
+    // attempts=1 (attempt 2 never started).
+    const [result] = await runScenarios(
+      server.url,
+      [{ name: "deadline-in-backoff", extraHeaders: {}, removeHeaders: [], expected: {} }],
+      { allowHttp: true, responseTimeoutMs: 200, timeoutMs: 5000 },
+      { maxAttempts: 5, backoffMs: 500, retryOn: ["response-timeout"] },
+      350,
+    );
+    expect(result.report.findings.some((f) => f.code === "SCENARIO_TIMEOUT")).toBe(true);
+    expect(result.attempts).toBe(1); // backoff aborted; attempt 2 never started
+    expect(result.retryCategory).toBeUndefined();
   }, SLOW);
 
   it("SCENARIO_TIMEOUT is never accompanied by RETRY_EXHAUSTED", async () => {
     const [result] = await runScenarios(
       server.url,
-      [{ name: "deadline-no-exhaust", extraHeaders: {}, removeHeaders: [], expected: {} }],
+      [{ name: "no-exhaust", extraHeaders: {}, removeHeaders: [], expected: {} }],
       { allowHttp: true, responseTimeoutMs: 200, timeoutMs: 5000 },
       { maxAttempts: 5, backoffMs: 150, retryOn: ["response-timeout"] },
       300,
     );
     expect(result.report.findings.some((f) => f.code === "RETRY_EXHAUSTED")).toBe(false);
     expect(result.report.findings.some((f) => f.code === "SCENARIO_TIMEOUT")).toBe(true);
+  }, SLOW);
+
+  it("subsequent scenario runs fine after a SCENARIO_TIMEOUT (no leaked handles)", async () => {
+    // If timers or sockets leaked from the previous scenario, the next run
+    // would hang. Completing promptly verifies cleanup.
+    const [result] = await runScenarios(
+      server.url,
+      [{ name: "after-timeout", extraHeaders: {}, removeHeaders: [], expected: {} }],
+      { allowHttp: true, responseTimeoutMs: 200, timeoutMs: 5000 },
+    );
+    expect(result.report.findings.some((f) => f.code === "RESPONSE_TIMEOUT")).toBe(true);
+    expect(result.attempts).toBe(1);
   }, SLOW);
 });
 

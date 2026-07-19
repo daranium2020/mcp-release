@@ -11,6 +11,16 @@
  *
  * Never retried regardless of configuration:
  *   400, 401, 403, schema validation errors, malformed MCP responses, SCENARIO_TIMEOUT
+ *
+ * SCENARIO_TIMEOUT is a hard wall-clock deadline:
+ *   - One AbortController is created per scenario when scenarioTimeoutMs > 0.
+ *   - Its signal is passed to every runCheck() call and into connectToMcpServer
+ *     so it can abort any in-flight TCP connection, HTTP response, or request.
+ *   - Backoff sleeps between retries are also abortable via the same signal.
+ *   - When the deadline fires mid-request, check.ts emits SCENARIO_TIMEOUT
+ *     (not CONNECT_TIMEOUT or RESPONSE_TIMEOUT).
+ *   - When it fires during backoff, the sleep is interrupted immediately.
+ *   - The scenario timer is always cleared in a finally block to prevent leaks.
  */
 
 import { runCheck, type CheckOptions } from "./check.js";
@@ -44,6 +54,7 @@ const RATE_LIMIT_CODES = new Set(["RATE_LIMITED"]);
 const SERVER_ERROR_CODES = new Set(["REMOTE_HTTP_ERROR"]);
 const CONNECTION_FAILURE_CODES = new Set(["TRANSPORT_ERROR", "CONNECT_TIMEOUT"]);
 const RESPONSE_TIMEOUT_CODES = new Set(["RESPONSE_TIMEOUT"]);
+const SCENARIO_TIMEOUT_CODES = new Set(["SCENARIO_TIMEOUT"]);
 
 type CheckResult = Awaited<ReturnType<typeof runCheck>>;
 
@@ -97,6 +108,67 @@ function scenarioMatches(
   return true;
 }
 
+/** Sleep for ms, aborting immediately if signal fires before the timer ends. */
+function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) { reject(new Error("Scenario aborted")); return; }
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(timer);
+      reject(new Error("Scenario aborted"));
+    }, { once: true });
+  });
+}
+
+/**
+ * Await a backoff sleep bounded by the scenario signal.
+ * Returns true when the sleep completed normally, false when the scenario
+ * deadline fired during the wait (caller must emit SCENARIO_TIMEOUT and stop).
+ */
+async function backoffAndCheck(ms: number, signal?: AbortSignal): Promise<boolean> {
+  if (!signal) { await sleep(ms); return true; }
+  try {
+    await abortableSleep(ms, signal);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Build a SCENARIO_TIMEOUT CheckResult for use when the deadline fires. */
+function makeScenarioTimeoutReport(
+  serverUrl: string,
+  scenarioName: string,
+  scenarioTimeoutMs: number,
+  attempts: number,
+  startMs: number,
+): CheckResult {
+  const now = new Date().toISOString();
+  return {
+    schemaVersion: "1",
+    serverUrl,
+    checkedAt: now,
+    startedAt: now,
+    durationMs: Date.now() - startMs,
+    overallStatus: "FAIL",
+    transport: null,
+    transportType: "http" as const,
+    protocolVersion: null,
+    serverInfo: null,
+    findings: [
+      makeFinding(
+        "SCENARIO_TIMEOUT",
+        "FAIL",
+        `Scenario "${scenarioName}" exceeded its ${scenarioTimeoutMs}ms budget.`,
+        { scenarioTimeoutMs },
+      ),
+    ],
+    tools: [],
+    scenarioName,
+    attempts,
+  };
+}
+
 async function runSingleScenario(
   serverUrl: string,
   scenario: ScenarioInput,
@@ -117,124 +189,162 @@ async function runSingleScenario(
     ...(Object.keys(headers).length > 0 ? { requestHeaders: headers } : {}),
   };
 
+  // Hard deadline: an AbortController fires at the scenario budget boundary.
+  // Its signal is threaded into every runCheck() call so that in-flight TCP
+  // connections, HTTP responses, and backoff sleeps are all interrupted when
+  // the deadline expires — not just the inter-retry gap.
+  const scenarioController = scenarioTimeoutMs > 0 ? new AbortController() : null;
+  const scenarioSignal = scenarioController?.signal;
+  let scenarioTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const checkOptionsWithSignal: CheckOptions = {
+    ...checkOptions,
+    ...(scenarioSignal !== undefined ? { scenarioSignal } : {}),
+  };
+
   let finalReport: CheckResult | null = null;
   let attempts = 0;
   let usedRetryCategory: RetryCategory | null = null;
 
-  for (let attempt = 1; attempt <= retry.maxAttempts; attempt++) {
-    // attempts is NOT advanced here — only after an actual runCheck call so that
-    // a SCENARIO_TIMEOUT at the top of iteration N reports N-1 completed requests,
-    // not N (the deadline check fires before the request starts).
-
-    if (Date.now() >= deadline) {
-      usedRetryCategory = null; // deadline fired before retry; no retry category applies
-      const now = new Date().toISOString();
-      finalReport = {
-        schemaVersion: "1",
-        serverUrl,
-        checkedAt: now,
-        startedAt: now,
-        durationMs: Date.now() - startMs,
-        overallStatus: "FAIL",
-        transport: null,
-        transportType: "http" as const,
-        protocolVersion: null,
-        serverInfo: null,
-        findings: [
-          makeFinding(
-            "SCENARIO_TIMEOUT",
-            "FAIL",
-            `Scenario "${scenario.name}" exceeded its ${scenarioTimeoutMs}ms budget before attempt ${attempt}.`,
-            { scenarioTimeoutMs, attempt },
-          ),
-        ],
-        tools: [],
-        scenarioName: scenario.name,
-        attempts,
-      };
-      break;
+  try {
+    if (scenarioController !== null) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        scenarioController.abort();
+      } else {
+        scenarioTimer = setTimeout(() => scenarioController.abort(), remaining);
+      }
     }
 
-    const report = await runCheck(serverUrl, checkOptions);
-    attempts = attempt; // advance only after the request has completed
+    for (let attempt = 1; attempt <= retry.maxAttempts; attempt++) {
+      // Fast path: abort already signalled (e.g. by a previous backoff expiry
+      // or a very short remaining budget) — no new request should start.
+      if (scenarioSignal?.aborted || Date.now() >= deadline) {
+        usedRetryCategory = null;
+        finalReport = makeScenarioTimeoutReport(
+          serverUrl, scenario.name, scenarioTimeoutMs, attempts, startMs,
+        );
+        break;
+      }
 
-    if (attempt < retry.maxAttempts) {
-      // 429: retry if rate-limit category enabled
-      if (hasCode(report, RATE_LIMIT_CODES) && retry.retryOn.has("rate-limit")) {
-        const retryAfter = getRateLimitRetryAfter(report);
-        const rawMs = parseRetryAfterMs(retryAfter) ?? retry.backoffMs;
-        if (rawMs > MAX_RETRY_AFTER_MS) {
-          finalReport = {
-            ...report,
-            findings: [
-              ...report.findings,
-              makeFinding(
-                "RETRY_EXHAUSTED",
-                "FAIL",
-                `Retry-After (${retryAfter ?? "unknown"}) exceeds the ${MAX_RETRY_AFTER_MS / 1000}s cap. Stopped after attempt ${attempt}.`,
-                { attempt, retryAfter },
-              ),
-            ],
-            overallStatus: "FAIL",
-            durationMs: Date.now() - startMs,
-            attempts,
-          };
-          break;
+      const report = await runCheck(serverUrl, checkOptionsWithSignal);
+      // Increment only after runCheck returns — a request that was aborted
+      // mid-flight by the scenario signal still counts as started.
+      attempts = attempt;
+
+      // SCENARIO_TIMEOUT from an in-flight request — never retry.
+      if (hasCode(report, SCENARIO_TIMEOUT_CODES)) {
+        usedRetryCategory = null;
+        finalReport = { ...report, durationMs: Date.now() - startMs, attempts };
+        break;
+      }
+
+      if (attempt < retry.maxAttempts) {
+        // 429: retry if rate-limit category enabled
+        if (hasCode(report, RATE_LIMIT_CODES) && retry.retryOn.has("rate-limit")) {
+          const retryAfter = getRateLimitRetryAfter(report);
+          const rawMs = parseRetryAfterMs(retryAfter) ?? retry.backoffMs;
+          if (rawMs > MAX_RETRY_AFTER_MS) {
+            finalReport = {
+              ...report,
+              findings: [
+                ...report.findings,
+                makeFinding(
+                  "RETRY_EXHAUSTED",
+                  "FAIL",
+                  `Retry-After (${retryAfter ?? "unknown"}) exceeds the ${MAX_RETRY_AFTER_MS / 1000}s cap. Stopped after attempt ${attempt}.`,
+                  { attempt, retryAfter },
+                ),
+              ],
+              overallStatus: "FAIL",
+              durationMs: Date.now() - startMs,
+              attempts,
+            };
+            break;
+          }
+          usedRetryCategory = "rate-limit";
+          if (!await backoffAndCheck(clampRetryAfterMs(rawMs), scenarioSignal)) {
+            usedRetryCategory = null;
+            finalReport = makeScenarioTimeoutReport(
+              serverUrl, scenario.name, scenarioTimeoutMs, attempts, startMs,
+            );
+            break;
+          }
+          continue;
         }
-        usedRetryCategory = "rate-limit";
-        await sleep(clampRetryAfterMs(rawMs));
-        continue;
+
+        // 5xx: retry if server-error category enabled
+        if (hasCode(report, SERVER_ERROR_CODES) && retry.retryOn.has("server-error")) {
+          usedRetryCategory = "server-error";
+          if (!await backoffAndCheck(retry.backoffMs, scenarioSignal)) {
+            usedRetryCategory = null;
+            finalReport = makeScenarioTimeoutReport(
+              serverUrl, scenario.name, scenarioTimeoutMs, attempts, startMs,
+            );
+            break;
+          }
+          continue;
+        }
+
+        // Connection failure: retry if connection-failure category enabled
+        if (hasCode(report, CONNECTION_FAILURE_CODES) && retry.retryOn.has("connection-failure")) {
+          usedRetryCategory = "connection-failure";
+          if (!await backoffAndCheck(retry.backoffMs, scenarioSignal)) {
+            usedRetryCategory = null;
+            finalReport = makeScenarioTimeoutReport(
+              serverUrl, scenario.name, scenarioTimeoutMs, attempts, startMs,
+            );
+            break;
+          }
+          continue;
+        }
+
+        // Response timeout: retry if response-timeout category enabled
+        if (hasCode(report, RESPONSE_TIMEOUT_CODES) && retry.retryOn.has("response-timeout")) {
+          usedRetryCategory = "response-timeout";
+          if (!await backoffAndCheck(retry.backoffMs, scenarioSignal)) {
+            usedRetryCategory = null;
+            finalReport = makeScenarioTimeoutReport(
+              serverUrl, scenario.name, scenarioTimeoutMs, attempts, startMs,
+            );
+            break;
+          }
+          continue;
+        }
       }
 
-      // 5xx: retry if server-error category enabled
-      if (hasCode(report, SERVER_ERROR_CODES) && retry.retryOn.has("server-error")) {
-        usedRetryCategory = "server-error";
-        await sleep(retry.backoffMs);
-        continue;
+      // Last attempt and still failing after multiple attempts — add RETRY_EXHAUSTED
+      if (attempt === retry.maxAttempts && attempt > 1 && report.overallStatus === "FAIL") {
+        finalReport = {
+          ...report,
+          findings: [
+            ...report.findings,
+            makeFinding(
+              "RETRY_EXHAUSTED",
+              "FAIL",
+              `All ${retry.maxAttempts} attempts failed.`,
+              { attempts: retry.maxAttempts, retryCategory: usedRetryCategory },
+            ),
+          ],
+          overallStatus: "FAIL",
+          durationMs: Date.now() - startMs,
+          attempts,
+        };
+        break;
       }
 
-      // Connection failure: retry if connection-failure category enabled
-      if (hasCode(report, CONNECTION_FAILURE_CODES) && retry.retryOn.has("connection-failure")) {
-        usedRetryCategory = "connection-failure";
-        await sleep(retry.backoffMs);
-        continue;
-      }
-
-      // Response timeout: retry if response-timeout category enabled
-      if (hasCode(report, RESPONSE_TIMEOUT_CODES) && retry.retryOn.has("response-timeout")) {
-        usedRetryCategory = "response-timeout";
-        await sleep(retry.backoffMs);
-        continue;
-      }
-    }
-
-    // Last attempt and still failing after multiple attempts — add RETRY_EXHAUSTED
-    if (attempt === retry.maxAttempts && attempt > 1 && report.overallStatus === "FAIL") {
-      finalReport = {
-        ...report,
-        findings: [
-          ...report.findings,
-          makeFinding(
-            "RETRY_EXHAUSTED",
-            "FAIL",
-            `All ${retry.maxAttempts} attempts failed.`,
-            { attempts: retry.maxAttempts, retryCategory: usedRetryCategory },
-          ),
-        ],
-        overallStatus: "FAIL",
-        durationMs: Date.now() - startMs,
-        attempts,
-      };
+      finalReport = { ...report, durationMs: Date.now() - startMs, attempts };
       break;
     }
 
-    finalReport = { ...report, durationMs: Date.now() - startMs, attempts };
-    break;
-  }
-
-  if (finalReport === null) {
-    finalReport = await runCheck(serverUrl, checkOptions);
-    attempts = 1;
+    if (finalReport === null) {
+      finalReport = await runCheck(serverUrl, checkOptionsWithSignal);
+      attempts = 1;
+    }
+  } finally {
+    // Always clear the scenario timer to prevent it from firing after the
+    // scenario has already resolved (would call abort() on a settled signal).
+    if (scenarioTimer !== null) clearTimeout(scenarioTimer);
   }
 
   const actualResult = finalReport.overallStatus;
