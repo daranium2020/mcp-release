@@ -35,3 +35,17 @@ export {
   buildRequestHeaders,
   HeaderValidationError,
 } from "./headers.js";
+export { RateLimitTransportError, AuthChallengeTransportError } from "./transport.js";
+export { parseRetryAfterMs, clampRetryAfterMs, MAX_RETRY_AFTER_MS, sleep } from "./rate-limit.js";
+export {
+  runScenarios,
+  buildConfigReport,
+  type RetryOptions,
+  type ScenarioInput,
+} from "./scenario-runner.js";
+export {
+  type ConfigReport,
+  type ScenarioResult,
+  type ScenarioExpectation,
+  type ScenarioActual,
+} from "./config-report.js";

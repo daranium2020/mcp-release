@@ -120,7 +120,85 @@ node packages/cli/dist/index.js check https://mcp-release-fixture.vercel.app/mcp
 | `--json` | Print JSON report to stdout. |
 | `--markdown` | Print Markdown report to stdout. |
 | `--out <path>` | Write report to file (JSON by default; Markdown if `--markdown`). |
+| `--config <path>` | Path to a `mcp-release.config.yml` file. Runs all scenarios defined in the file. |
 | `--fail-on-warning` | Exit 4 when overall status is WARNING. |
+
+### Configuration file (v0.3.0)
+
+The `--config` flag runs a sequence of named scenarios against a single MCP endpoint, each with independent headers, expected outcomes, retry settings, and timeouts. This is the recommended approach for authenticated endpoints and regression testing.
+
+**Config file format (`mcp-release.config.yml`):**
+
+```yaml
+version: 1
+endpoint: https://api.example.com/mcp
+
+# Base headers sent with all requests. ${VAR} is resolved from environment at runtime.
+headers:
+  Authorization: Bearer ${API_TOKEN}
+
+timeouts:
+  connectMs: 5000    # TCP connection timeout (default: 10000)
+  responseMs: 10000  # HTTP response timeout, separate from connect (default: timeoutMs)
+
+retries:
+  maxAttempts: 3     # Total attempts including first (default: 1 = no retry)
+  backoffMs: 500     # Fixed wait between retries (default: 1000)
+  retryOn:           # Categories to retry — all disabled by default
+    - rate-limit         # HTTP 429
+    - server-error       # 5xx responses
+    - connection-failure # Connect failures and connect timeouts
+    - response-timeout   # Response timeouts
+
+scenarios:
+  # Expected positive: server responds correctly with provided token
+  - name: healthy
+    expect:
+      result: pass
+
+  # Expected negative: calling without token should return 401
+  - name: missing-auth
+    removeHeaders:
+      - Authorization
+    expect:
+      httpStatus: 401
+
+  # Custom token override: per-scenario header replacement
+  - name: custom-token
+    headers:
+      Authorization: Bearer ${READONLY_TOKEN}
+    expect:
+      result: pass
+```
+
+**Environment variable substitution:**
+
+Header values use `${VAR_NAME}` syntax. Variables are resolved at runtime from the process environment, never at parse time. Unresolved variables throw an error before any requests are made. Resolved values are never printed or logged.
+
+```bash
+API_TOKEN=your-token READONLY_TOKEN=read-only-token \
+  mcp-release check --config mcp-release.config.yml
+```
+
+**Report formats for config runs:**
+
+```bash
+mcp-release check --config mcp-release.config.yml              # terminal (default)
+mcp-release check --config mcp-release.config.yml --json       # JSON
+mcp-release check --config mcp-release.config.yml --markdown   # Markdown
+mcp-release check --config mcp-release.config.yml --markdown --out report.md
+```
+
+**GitHub Actions with config file:**
+
+```yaml
+- name: Validate MCP server
+  run: |
+    mcp-release check --config mcp-release.config.yml --markdown >> $GITHUB_STEP_SUMMARY
+  env:
+    API_TOKEN: ${{ secrets.API_TOKEN }}
+    READONLY_TOKEN: ${{ secrets.READONLY_TOKEN }}
+```
 
 ### GitHub Action
 
@@ -187,9 +265,10 @@ The action annotates the workflow job with findings and writes a summary to the 
 | **Tool schemas** | Tool names (non-empty, valid characters), descriptions, `inputSchema` (valid JSON Schema, Ajv-compilable), `outputSchema` (if present), duplicate names |
 | **Network safety** (HTTP) | SSRF protection, DNS pinning, redirect chain validation (up to 3 hops), HTTPS enforcement across all redirects |
 | **Stdio transport** (stdio) | Non-JSON lines on stdout (`STDIO_UNEXPECTED_OUTPUT`), malformed MCP messages (`STDIO_FRAMING_ERROR`), response size limit (`STDIO_RESPONSE_SIZE_EXCEEDED`), unclean shutdown (`STDIO_SHUTDOWN_TIMEOUT`) |
+| **Auth & resilience** (v0.3.0) | 401/403 classification, expired vs invalid credential detection, 429 rate-limit with Retry-After, connect/response timeout types, configurable retries, scenario-based expected-negative testing |
 | **Reports** | Findings exportable as JSON or Markdown |
 
-**What is not checked:** tools are never invoked, authenticated endpoints are not validated, runtime correctness of tool responses is not assessed.
+**What is not checked:** tools are never invoked, runtime correctness of tool responses is not assessed.
 
 ---
 
@@ -198,22 +277,63 @@ The action annotates the workflow job with findings and writes a summary to the 
 | Result | Meaning |
 |---|---|
 | **PASS** | All checks completed without a blocking or incomplete condition. A PASS does not guarantee universal security or correctness. It reflects the checks MCP Release ran. |
-| **WARNING** | One or more checks could not complete or found a non-blocking issue. If the server returns `401`, MCP Release records `AUTH_REQUIRED` as a WARNING and stops. No credentials are accepted or stored. |
-| **FAIL** | One or more checks found a blocking condition. Review the server before shipping. |
+| **WARNING** | One or more checks could not complete or found a non-blocking issue. Example: `AUTH_REQUIRED` (server returned 401, no credentials provided). |
+| **FAIL** | One or more checks found a blocking condition. Examples: `AUTH_INVALID`, `AUTH_EXPIRED`, `AUTH_FORBIDDEN`, `RATE_LIMITED`, `CONNECT_TIMEOUT`, `RESPONSE_TIMEOUT`. |
+
+### Auth finding codes (v0.3.0)
+
+| Code | Severity | Condition |
+|---|---|---|
+| `AUTH_REQUIRED` | WARNING | 401 response without credentials — server requires auth |
+| `AUTH_INVALID` | FAIL | 401 response with credentials (including RFC 6750 `error="invalid_token"`) |
+| `AUTH_EXPIRED` | FAIL | 401 response with credentials + explicit unambiguous expiry code: `error="expired"` or `error="token_expired"` |
+| `AUTH_FORBIDDEN` | FAIL | 403 response (insufficient permissions) |
+| `SCENARIO_MISMATCH` | FAIL | Actual outcome did not match the declared `expect` block |
+
+**Limitation:** `AUTH_EXPIRED` is only produced when the server returns an unambiguous, expiry-specific `WWW-Authenticate: Bearer error=` value. The RFC 6750 standard code `error="invalid_token"` is classified as `AUTH_INVALID` because it covers expired, revoked, and malformed tokens — it is too broad to unambiguously signal expiry. Most OAuth 2.0 servers use `invalid_token` and will produce `AUTH_INVALID`. Response bodies and `error_description` fields are never read or included in reports.
+
+### Resilience finding codes (v0.3.0)
+
+| Code | Severity | Condition |
+|---|---|---|
+| `RATE_LIMITED` | FAIL | 429 Too Many Requests |
+| `RETRY_AFTER_INVALID` | WARNING | 429 with an unparseable `Retry-After` header |
+| `RETRY_EXHAUSTED` | FAIL | All configured attempts failed; or `Retry-After` exceeds the 60s cap |
+| `CONNECT_TIMEOUT` | FAIL | TCP connection timed out before establishment |
+| `RESPONSE_TIMEOUT` | FAIL | Connection established but server did not send a response in time |
+| `SCENARIO_TIMEOUT` | FAIL | Scenario exceeded its per-scenario time budget (never retried) |
+
+### Retry rules (v0.3.0)
+
+Retries are **off by default**. Each failure category must be explicitly listed in `retries.retryOn`. A retry only happens when `retries.maxAttempts > 1` AND the relevant category is enabled.
+
+| Condition | `retryOn` category | Default |
+|---|---|---|
+| HTTP 429 (RATE_LIMITED) | `rate-limit` | off |
+| 5xx responses | `server-error` | off |
+| Connection failures and connect timeouts | `connection-failure` | off |
+| Response timeouts | `response-timeout` | off |
+| 401, 403 | — | Never retried |
+| 400, schema errors, malformed MCP | — | Never retried |
+| Scenario timeout | — | Never retried |
+
+Rate-limit retries honour the server's `Retry-After` header (integer seconds or HTTP date), capped at 60 seconds. Values above the cap produce `RETRY_EXHAUSTED` immediately without waiting.
 
 ---
 
 ## Security model
 
 - Tools are discovered via `tools/list` but **never invoked**. No arguments are constructed or sent.
-- Only public **HTTPS** endpoints are accepted. HTTP is rejected before any connection.
-- Private, loopback, link-local (`169.254.0.0/16`), and cloud-metadata (`169.254.169.254`) destinations are **blocked at the DNS level**.
+- Only public **HTTPS** endpoints are accepted by the web checker. HTTP is rejected before any connection.
+- Private, loopback, link-local (`169.254.0.0/16`), and cloud-metadata (`169.254.169.254`) destinations are **blocked at the DNS level** (web). CLI/GitHub Action allow private networks for local testing.
 - **DNS pinning** closes the TOCTOU gap. The resolved IP is pinned at connection time.
 - Redirects are re-validated at each hop. HTTPS applies across all redirects.
-- Remote response bodies are never included in findings.
-- **No credentials** are accepted, forwarded, or stored.
+- Remote response bodies are never read or included in findings. Only structured response headers (e.g. `WWW-Authenticate error=`, `Retry-After`) are inspected, never body content.
+- The web checker accepts **no credentials**. The CLI and GitHub Action send credentials only to the configured MCP endpoint — never to MCP Release infrastructure.
 - TLS verification is enforced (`rejectUnauthorized: true`).
 - Error messages are redacted. Token patterns and embedded URL credentials are stripped before being returned.
+- Sensitive headers (`Authorization`, `x-api-key`, `cookie`, etc.) are dropped on cross-origin redirects.
+- `${VAR_NAME}` env var values resolved from config headers are never logged or printed.
 
 ---
 

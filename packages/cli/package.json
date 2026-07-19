@@ -37,9 +37,13 @@
   "devDependencies": {
     "@mcp-release/core": "workspace:*",
     "@mcp-release/reporter": "workspace:*",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
     "commander": "^12.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "js-yaml": "^4.2.0"
   }
 }

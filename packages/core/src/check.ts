@@ -1,9 +1,10 @@
 import { type CheckReport, makeFinding, worstSeverity, type Finding } from "./report.js";
-import { connectToMcpServer, listTools, TransportError, type ConnectOptions } from "./transport.js";
+import { connectToMcpServer, listTools, TransportError, RateLimitTransportError, AuthChallengeTransportError, ScenarioTimeoutTransportError, type ConnectOptions } from "./transport.js";
 import { validateTools } from "./validator.js";
 import { SsrfError } from "./ssrf.js";
 import { redactUrl } from "./redact.js";
 import { describeTransportError, type TransportDiagnostic } from "./diagnostics.js";
+import { parseRetryAfterMs } from "./rate-limit.js";
 
 /**
  * Extract a numeric HTTP status code from the cause of a TransportError.
@@ -52,6 +53,39 @@ function extractRpcErrorCode(err: TransportError): number | null {
   return code;
 }
 
+/**
+ * Parse only the standardized `error=` parameter from a WWW-Authenticate header.
+ *
+ * SECURITY: We read only the structured `error=` parameter (RFC 6750 §3.1).
+ * We never read, log, or emit:
+ *   - The response body (may contain server-controlled strings)
+ *   - The `error_description=` parameter (server-controlled, may contain secrets)
+ *   - The `error_uri=` parameter
+ *
+ * Returns the lowercased error code (e.g. "invalid_token"), or null if absent/unparseable.
+ */
+function parseWwwAuthError(header: string | null): string | null {
+  if (!header) return null;
+  const match = /\berror="([^"]+)"/i.exec(header);
+  return match ? match[1]!.toLowerCase() : null;
+}
+
+/**
+ * Whether the WWW-Authenticate error= code is an unambiguous expiry indicator.
+ *
+ * RFC 6750 §3.1 `invalid_token` covers expired, revoked, AND malformed tokens
+ * and is therefore too broad to classify as AUTH_EXPIRED. Only non-standard
+ * codes that unambiguously signal expiry are accepted here. Servers using the
+ * standard `invalid_token` code will produce AUTH_INVALID; this is a
+ * documented limitation.
+ *
+ * Accepted: "expired", "token_expired"
+ * Rejected: "invalid_token" (RFC 6750, too broad)
+ */
+function isExpiredTokenIndicator(errorCode: string | null): boolean {
+  return errorCode === "expired" || errorCode === "token_expired";
+}
+
 export type CheckOptions = {
   timeoutMs?: number;
   maxRedirects?: number;
@@ -76,6 +110,17 @@ export type CheckOptions = {
    * record. Called server-side only; never forwarded to the client response.
    */
   onDiagnostic?: (d: TransportDiagnostic) => void;
+  /**
+   * Timeout for individual HTTP responses (separate from connect timeout).
+   * Added in v0.3.0 for fine-grained timeout classification.
+   */
+  responseTimeoutMs?: number;
+  /**
+   * AbortSignal from the scenario runner's deadline timer. When fired,
+   * runCheck returns immediately with a SCENARIO_TIMEOUT finding.
+   * Never set by the web API — only by the scenario runner.
+   */
+  scenarioSignal?: AbortSignal;
 };
 
 export async function runCheck(
@@ -99,6 +144,8 @@ export async function runCheck(
     if (opts.timeoutMs !== undefined) connectOpts.timeoutMs = opts.timeoutMs;
     if (opts.maxRedirects !== undefined) connectOpts.maxRedirects = opts.maxRedirects;
     if (opts.requestHeaders !== undefined) connectOpts.requestHeaders = opts.requestHeaders;
+    if (opts.responseTimeoutMs !== undefined) connectOpts.responseTimeoutMs = opts.responseTimeoutMs;
+    if (opts.scenarioSignal !== undefined) connectOpts.scenarioSignal = opts.scenarioSignal;
     connectResult = await connectToMcpServer(serverUrl, connectOpts);
   } catch (err) {
     const durationMs = Date.now() - startMs;
@@ -124,6 +171,72 @@ export async function runCheck(
       } else {
         findings.push(makeFinding("SSRF_BLOCKED", "FAIL", cause.message, { reason: cause.reason }));
       }
+    } else if (err instanceof AuthChallengeTransportError) {
+      // 401 Unauthorized — carries WWW-Authenticate from the response header.
+      // We inspect ONLY the structured `error=` parameter from the header.
+      // The response body and error_description are never read or emitted.
+      const wwwError = parseWwwAuthError(err.wwwAuthenticate);
+      const hasCredentials =
+        opts.requestHeaders !== undefined &&
+        Object.keys(opts.requestHeaders).some((k) =>
+          k.toLowerCase() === "authorization" || k.toLowerCase() === "x-api-key",
+        );
+      if (hasCredentials) {
+        if (isExpiredTokenIndicator(wwwError)) {
+          findings.push(
+            makeFinding(
+              "AUTH_EXPIRED",
+              "FAIL",
+              "The provided credentials have expired or been revoked. Obtain new credentials and retry.",
+            ),
+          );
+        } else {
+          findings.push(
+            makeFinding(
+              "AUTH_INVALID",
+              "FAIL",
+              "Server rejected the provided credentials (401 Unauthorized).",
+            ),
+          );
+        }
+      } else {
+        findings.push(
+          makeFinding(
+            "AUTH_REQUIRED",
+            "WARNING",
+            "Server requires authorization. Authenticated checks were not performed.",
+          ),
+        );
+      }
+    } else if (err instanceof ScenarioTimeoutTransportError) {
+      // Scenario wall-clock budget expired while a request was in flight.
+      // Classified as SCENARIO_TIMEOUT (not CONNECT_TIMEOUT / RESPONSE_TIMEOUT)
+      // because it reflects the total scenario budget, not a per-attempt limit.
+      findings.push(
+        makeFinding(
+          "SCENARIO_TIMEOUT",
+          "FAIL",
+          "Scenario deadline exceeded while the request was in flight.",
+        ),
+      );
+    } else if (err instanceof RateLimitTransportError) {
+      // 429 Too Many Requests — carries Retry-After from the response header.
+      const retryAfterMs = parseRetryAfterMs(err.retryAfter);
+      const context: Record<string, unknown> = { attempts: 1 };
+      if (err.retryAfter !== null) context["retryAfter"] = err.retryAfter;
+      if (retryAfterMs === null && err.retryAfter !== null) {
+        // Retry-After present but not parseable
+        findings.push(
+          makeFinding("RETRY_AFTER_INVALID", "WARNING",
+            "Server returned a Retry-After header that could not be parsed.",
+            { retryAfter: err.retryAfter }),
+        );
+      }
+      findings.push(
+        makeFinding("RATE_LIMITED", "FAIL",
+          "Server returned 429 Too Many Requests. Retry when the rate limit resets.",
+          context),
+      );
     } else if (err instanceof TransportError) {
       // HTTP status is extracted FIRST. The MCP SDK embeds the raw server response
       // body in err.message for every HTTP-status error. Any error with a recognized
@@ -132,20 +245,36 @@ export async function runCheck(
       // both httpStatus and rpcCode are null (genuine transport failures).
       const httpStatus = extractHttpStatus(err);
       const rpcCode = extractRpcErrorCode(err);
-      if (httpStatus === 401) {
-        findings.push(
-          makeFinding(
-            "AUTH_REQUIRED",
-            "WARNING",
-            "Server requires authorization. Authenticated checks were not performed.",
-          ),
+      const hasCredentials =
+        opts.requestHeaders !== undefined &&
+        Object.keys(opts.requestHeaders).some((k) =>
+          k.toLowerCase() === "authorization" || k.toLowerCase() === "x-api-key",
         );
+      if (httpStatus === 401) {
+        if (hasCredentials) {
+          findings.push(
+            makeFinding(
+              "AUTH_INVALID",
+              "FAIL",
+              "Server rejected the provided credentials (401 Unauthorized).",
+            ),
+          );
+        } else {
+          findings.push(
+            makeFinding(
+              "AUTH_REQUIRED",
+              "WARNING",
+              "Server requires authorization. Authenticated checks were not performed.",
+            ),
+          );
+        }
       } else if (httpStatus === 403) {
         findings.push(
-          makeFinding("HTTP_ERROR", "FAIL", "Server returned 403 Forbidden. Access denied."),
+          makeFinding("AUTH_FORBIDDEN", "FAIL",
+            "Server denied access (403 Forbidden). The credentials may lack required permissions."),
         );
       } else if (httpStatus !== null) {
-        // Any other recognized HTTP status (400, 404, 429, 500, 502, …):
+        // Any other recognized HTTP status (400, 404, 500, 502, …):
         // fixed message only — no err.message, no response body.
         findings.push(
           makeFinding(
@@ -156,9 +285,6 @@ export async function runCheck(
         );
       } else if (rpcCode !== null) {
         // JSON-RPC protocol error during initialize (e.g., McpError{code: -32600}).
-        // The MCP SDK embeds the server's JSON-RPC error message in err.message —
-        // never forward it (potential server-response leakage). Expose only the
-        // numeric code as safe diagnostic context.
         findings.push(
           makeFinding(
             "INIT_FAILURE",
@@ -167,10 +293,15 @@ export async function runCheck(
             { rpcCode },
           ),
         );
-      } else if (err.message.includes("timeout")) {
-        // Genuine transport timeout — no HTTP status; err.message is our own text.
+      } else if (err.message === "Response timeout") {
         findings.push(
-          makeFinding("TIMEOUT", "FAIL", `Connection timed out: ${err.message}`),
+          makeFinding("RESPONSE_TIMEOUT", "FAIL",
+            "The server connected but did not return a response within the timeout."),
+        );
+      } else if (err.message === "Connection timeout" || err.message.includes("timeout")) {
+        findings.push(
+          makeFinding("CONNECT_TIMEOUT", "FAIL",
+            "Could not establish a connection to the server within the timeout."),
         );
       } else if (err.message.includes("Redirect limit")) {
         findings.push(

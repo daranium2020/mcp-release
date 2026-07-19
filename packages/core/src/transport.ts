@@ -56,6 +56,20 @@ export type ConnectOptions = {
    * redirect-handling logic in fetchChain.
    */
   requestHeaders?: Record<string, string>;
+  /**
+   * Timeout for each individual HTTP response (after the TCP connection is
+   * established). When unset, falls back to timeoutMs.
+   * Added in v0.3.0 for fine-grained timeout classification.
+   */
+  responseTimeoutMs?: number;
+  /**
+   * When provided, aborting this signal immediately cancels any in-flight
+   * connection or HTTP request and causes ScenarioTimeoutTransportError to
+   * propagate. check.ts classifies that as SCENARIO_TIMEOUT, which takes
+   * precedence over CONNECT_TIMEOUT and RESPONSE_TIMEOUT.
+   * Set only by the scenario runner — never by the web API.
+   */
+  scenarioSignal?: AbortSignal;
 };
 
 export type ConnectResult = {
@@ -84,6 +98,45 @@ export class TransportError extends Error {
   ) {
     super(message);
     this.name = "TransportError";
+  }
+}
+
+/**
+ * Thrown when the server returns HTTP 401.
+ * Carries the raw WWW-Authenticate header (RFC 9110 §11.6.1 / RFC 6750 §3.1)
+ * so check.ts can inspect only the structured `error=` parameter — never the
+ * body or error_description — to distinguish AUTH_EXPIRED from AUTH_INVALID.
+ */
+export class AuthChallengeTransportError extends TransportError {
+  constructor(
+    public readonly wwwAuthenticate: string | null,
+    selectedIpFamily?: 4 | 6 | null,
+  ) {
+    super("Authentication required (HTTP 401)", undefined, selectedIpFamily);
+    this.name = "AuthChallengeTransportError";
+  }
+}
+
+/**
+ * Thrown when the scenario-level AbortSignal fires (total budget exceeded).
+ * Propagated unchanged so check.ts can emit SCENARIO_TIMEOUT rather than
+ * CONNECT_TIMEOUT or RESPONSE_TIMEOUT, which are per-attempt findings.
+ */
+export class ScenarioTimeoutTransportError extends TransportError {
+  constructor() {
+    super("Scenario timeout");
+    this.name = "ScenarioTimeoutTransportError";
+  }
+}
+
+/** Thrown when the server returns HTTP 429. Carries Retry-After if present. */
+export class RateLimitTransportError extends TransportError {
+  constructor(
+    public readonly retryAfter: string | null,
+    selectedIpFamily?: 4 | 6 | null,
+  ) {
+    super("Rate limited (HTTP 429)", undefined, selectedIpFamily);
+    this.name = "RateLimitTransportError";
   }
 }
 
@@ -119,11 +172,18 @@ export function resolveConnectorPort(portStr: string, isHttps: boolean): number 
  *  - For `pinnedHostname`: always routes to `pinnedIp` (pre-validated, no TOCTOU).
  *  - For any other hostname (cross-origin redirect target): resolves DNS inline
  *    through our SSRF-checking resolver and connects to the first valid IP.
+ *
+ * `onTcpConnected` is called once when the TCP/TLS connection is established.
+ * The outer timeout in connectToMcpServer reads this flag to distinguish
+ * CONNECT_TIMEOUT (TCP never established) from RESPONSE_TIMEOUT (TCP connected
+ * but HTTP response didn't arrive in time), without relying on timer ordering.
  */
 function createPinnedConnector(
   pinnedHostname: string,
   pinnedIp: string,
   ssrfOpts: SsrfOptions,
+  onTcpConnected: () => void,
+  socketTimeoutMs: number,
 ): buildConnector.connector {
   const doConnect = (
     host: string,
@@ -139,12 +199,36 @@ function createPinnedConnector(
         servername,
         rejectUnauthorized: true, // NEVER disable TLS verification
       });
-      socket.once("secureConnect", () => callback(null, socket));
-      socket.once("error", (err) => callback(err, null));
+      // Socket-level connect timeout ensures the connector callback is always
+      // called (with an error) even when the remote never completes the TLS
+      // handshake. Without this, agent.destroy() hangs waiting for a callback
+      // that would never arrive.
+      socket.setTimeout(socketTimeoutMs, () => {
+        socket.destroy(new Error("Connection timeout"));
+      });
+      socket.once("secureConnect", () => {
+        socket.setTimeout(0);
+        onTcpConnected();
+        callback(null, socket);
+      });
+      socket.once("error", (err) => {
+        socket.setTimeout(0);
+        callback(err, null);
+      });
     } else {
       const socket = net.createConnection({ host, port });
-      socket.once("connect", () => callback(null, socket));
-      socket.once("error", (err) => callback(err, null));
+      socket.setTimeout(socketTimeoutMs, () => {
+        socket.destroy(new Error("Connection timeout"));
+      });
+      socket.once("connect", () => {
+        socket.setTimeout(0);
+        onTcpConnected();
+        callback(null, socket);
+      });
+      socket.once("error", (err) => {
+        socket.setTimeout(0);
+        callback(err, null);
+      });
     }
   };
 
@@ -212,9 +296,11 @@ export async function connectToMcpServer(
   opts: ConnectOptions = {},
 ): Promise<ConnectResult> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const responseTimeoutMs = opts.responseTimeoutMs ?? timeoutMs;
   const maxRedirects = opts.maxRedirects ?? MAX_REDIRECTS_DEFAULT;
   const ssrfOpts = opts.ssrf ?? {};
   const requestHeaders = opts.requestHeaders ?? {};
+  const scenarioSignal = opts.scenarioSignal;
 
   // Resolve DNS and validate URL — returns pinned IPs for HTTPS
   let resolvedUrl: Awaited<ReturnType<typeof resolveUrlForPinning>>;
@@ -227,10 +313,16 @@ export async function connectToMcpServer(
     throw err;
   }
 
-  // Create pinned agent for HTTPS (closes TOCTOU), or null for HTTP localhost
+  // Create pinned agent for HTTPS (closes TOCTOU), or null for HTTP localhost.
+  // tcpConnected tracks whether the TCP/TLS layer has completed. The outer
+  // timeoutMs timer reads this to emit the correct code: CONNECT_TIMEOUT when
+  // the connection phase itself timed out, or RESPONSE_TIMEOUT when TCP was
+  // already up but no HTTP response arrived. This eliminates any dependency on
+  // which setTimeout fires first when both delays are equal.
   let agent: Agent | null = null;
   let baseFetch: typeof globalThis.fetch;
   let pinnedIpFamily: 4 | 6 | null = null;
+  let tcpConnected = false;
 
   if (resolvedUrl.isHttps && resolvedUrl.resolvedIps.length > 0) {
     const pinnedIp = resolvedUrl.resolvedIps[0]!;
@@ -240,11 +332,15 @@ export async function connectToMcpServer(
       resolvedUrl.hostname,
       pinnedIp,
       ssrfOpts,
+      () => { tcpConnected = true; },
+      timeoutMs,
     );
     agent = new Agent({ connect: connector });
     baseFetch = makeFetchWithAgent(agent);
   } else {
-    // HTTP localhost in dev mode — use global fetch (socket goes to 127.0.0.1)
+    // HTTP localhost in dev mode — TCP to loopback is always instant, so the
+    // connection phase never times out; only the response phase can.
+    tcpConnected = true;
     baseFetch = fetch;
   }
 
@@ -297,13 +393,21 @@ export async function connectToMcpServer(
     chainVisited.add(urlStr);
 
     const timeoutController = new AbortController();
-    const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
+    let responseTimedOut = false;
+    const timer = setTimeout(() => {
+      responseTimedOut = true;
+      timeoutController.abort();
+    }, responseTimeoutMs);
 
     const existingSignal =
       init?.signal instanceof AbortSignal ? init.signal : undefined;
-    const mergedSignal = existingSignal
-      ? AbortSignal.any([timeoutController.signal, existingSignal])
-      : timeoutController.signal;
+    // Merge: response-timeout controller + optional SDK signal + scenario deadline.
+    // Scenario signal is checked FIRST in the catch block to enforce precedence.
+    const abortSignals: AbortSignal[] = [timeoutController.signal];
+    if (existingSignal) abortSignals.push(existingSignal);
+    if (scenarioSignal) abortSignals.push(scenarioSignal);
+    const mergedSignal =
+      abortSignals.length === 1 ? abortSignals[0]! : AbortSignal.any(abortSignals);
 
     const fetchInit: RequestInit = {
       ...init,
@@ -314,8 +418,34 @@ export async function connectToMcpServer(
     let response: Response;
     try {
       response = await baseFetch(urlStr, fetchInit);
+    } catch (fetchErr) {
+      clearTimeout(timer);
+      // Scenario deadline takes precedence — check it before the response timer.
+      if (scenarioSignal?.aborted) {
+        throw new ScenarioTimeoutTransportError();
+      }
+      // If our response timeout fired, re-throw as a named TransportError so
+      // check.ts can classify it as RESPONSE_TIMEOUT rather than CONNECT_TIMEOUT.
+      if (responseTimedOut || (fetchErr instanceof DOMException && fetchErr.name === "AbortError")) {
+        throw new TransportError("Response timeout");
+      }
+      throw fetchErr;
     } finally {
       clearTimeout(timer);
+    }
+
+    // Intercept HTTP 401 before the SDK sees it — we need the WWW-Authenticate header.
+    // We read ONLY the structured `error=` parameter in check.ts; the response body
+    // and error_description are never read or included in reports.
+    if (response.status === 401) {
+      const wwwAuthenticate = response.headers.get("www-authenticate");
+      throw new AuthChallengeTransportError(wwwAuthenticate, pinnedIpFamily);
+    }
+
+    // Intercept HTTP 429 before the SDK sees it — we need the Retry-After header.
+    if (response.status === 429) {
+      const retryAfter = response.headers.get("retry-after");
+      throw new RateLimitTransportError(retryAfter, pinnedIpFamily);
     }
 
     // Enforce maximum header count
@@ -433,18 +563,53 @@ export async function connectToMcpServer(
     // This cast resolves the internal type inconsistency; the runtime behaviour is correct.
     transport as unknown as Transport,
   );
+  // Suppress the unobserved rejection that occurs when the timeout fires and
+  // agent.destroy() causes the pending connectPromise to reject after we've
+  // already settled via the timeoutPromise branch.
+  connectPromise.catch(() => undefined);
+
+  // Scenario deadline races as a separate promise so it can interrupt the
+  // TCP/TLS phase (before fetchChain runs). When the signal fires, it wins
+  // over CONNECT_TIMEOUT and RESPONSE_TIMEOUT regardless of order.
+  const scenarioDeadlinePromise: Promise<never> | null = scenarioSignal
+    ? new Promise<never>((_, reject) => {
+        if (scenarioSignal.aborted) {
+          reject(new ScenarioTimeoutTransportError());
+          return;
+        }
+        scenarioSignal.addEventListener("abort", () => {
+          reject(new ScenarioTimeoutTransportError());
+        }, { once: true });
+      })
+    : null;
+
+  // The outer backstop emits CONNECT_TIMEOUT if TCP/TLS never established, or
+  // RESPONSE_TIMEOUT if TCP connected but no HTTP response arrived in time.
+  // Checks scenarioSignal at fire-time so that if both timers expire
+  // simultaneously the scenario deadline wins deterministically.
   const timeoutPromise = new Promise<never>((_, reject) =>
     setTimeout(
-      () => reject(new TransportError("Connection timeout")),
+      () => {
+        if (scenarioSignal?.aborted) {
+          reject(new ScenarioTimeoutTransportError());
+        } else {
+          reject(new TransportError(
+            tcpConnected ? "Response timeout" : "Connection timeout",
+          ));
+        }
+      },
       timeoutMs,
     ),
   );
+
+  const outerRacers: Array<Promise<unknown>> = [connectPromise, timeoutPromise];
+  if (scenarioDeadlinePromise) outerRacers.push(scenarioDeadlinePromise);
 
   let protocolVersion = "unknown";
   let serverInfo: { name?: string; version?: string } | null = null;
 
   try {
-    await Promise.race([connectPromise, timeoutPromise]);
+    await Promise.race(outerRacers);
     const info = mcpClient.getServerVersion();
     if (info) {
       protocolVersion = info.version ?? "unknown";
@@ -454,7 +619,11 @@ export async function connectToMcpServer(
       };
     }
   } catch (err) {
-    await agent?.destroy().catch(() => undefined);
+    // Fire-and-forget: the socket-level timeout in createPinnedConnector ensures
+    // the connector callback is called (with an error), so agent.destroy() will
+    // complete asynchronously without hanging. Awaiting it would block here until
+    // the socket timeout fires, which defeats the purpose of the outer timeout.
+    agent?.destroy().catch(() => undefined);
     const durationMs = Date.now() - startMs;
     const msg = redactErrorMessage(err);
     if (err instanceof TransportError) throw err;

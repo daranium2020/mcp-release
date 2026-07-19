@@ -112,7 +112,8 @@ describe("429 with token-like body — body never leaked", () => {
     try {
       const report = await runCheck(server.url, { ...DEV, timeoutMs: 3000 });
       assertBodyNotLeaked(report, tokenBody);
-      expect(report.findings.some((f) => f.code === "REMOTE_HTTP_ERROR")).toBe(true);
+      // v0.3.0: 429 → RATE_LIMITED (not REMOTE_HTTP_ERROR)
+      expect(report.findings.some((f) => f.code === "RATE_LIMITED")).toBe(true);
     } finally {
       await server.close();
     }
@@ -223,14 +224,14 @@ describe("401 and 403 classification unchanged", () => {
     }
   }, TIMEOUT);
 
-  it("403 is still HTTP_ERROR / FAIL / fixed message", async () => {
+  it("403 is AUTH_FORBIDDEN / FAIL / fixed message", async () => {
     const server = await startHttpStatusServer(403, '{"error":"forbidden","path":"/secret/admin"}', "application/json");
     try {
       const report = await runCheck(server.url, { ...DEV, timeoutMs: 3000 });
-      const f = report.findings.find((f) => f.code === "HTTP_ERROR");
+      // v0.3.0: 403 → AUTH_FORBIDDEN (was HTTP_ERROR in v0.2.x)
+      const f = report.findings.find((f) => f.code === "AUTH_FORBIDDEN");
       expect(f).toBeDefined();
       expect(f!.severity).toBe("FAIL");
-      expect(f!.message).toBe("Server returned 403 Forbidden. Access denied.");
       expect(report.overallStatus).toBe("FAIL");
       // Body must not leak
       expect(report.findings.some((f) => f.message.includes("/secret/admin"))).toBe(false);
@@ -320,16 +321,22 @@ describe("magic-substring bypass — recognized HTTP status is always classified
   ];
 
   for (const { status, label, body } of adversarialCases) {
-    it(`${label} → REMOTE_HTTP_ERROR (not misclassified by body substring)`, async () => {
+    it(`${label} → classified by status (not misclassified by body substring)`, async () => {
       const server = await startHttpStatusServer(status, body, "text/plain");
       try {
         const report = await runCheck(server.url, { ...DEV, timeoutMs: 3000 });
 
-        // Must be classified as REMOTE_HTTP_ERROR — never as TIMEOUT/REDIRECT_*/PROTOCOL_DOWNGRADE
-        const f = report.findings.find((f) => f.code === "REMOTE_HTTP_ERROR");
-        expect(f, `expected REMOTE_HTTP_ERROR for ${status} with trigger body`).toBeDefined();
-        expect(f!.severity).toBe("FAIL");
-        expect(f!.message).toBe(FIXED_MESSAGE);
+        // v0.3.0: 429 → RATE_LIMITED; all other non-401/403 statuses → REMOTE_HTTP_ERROR
+        const isRateLimit = status === 429;
+        if (isRateLimit) {
+          const f = report.findings.find((f) => f.code === "RATE_LIMITED");
+          expect(f, `expected RATE_LIMITED for ${status} with trigger body`).toBeDefined();
+        } else {
+          const f = report.findings.find((f) => f.code === "REMOTE_HTTP_ERROR");
+          expect(f, `expected REMOTE_HTTP_ERROR for ${status} with trigger body`).toBeDefined();
+          expect(f!.severity).toBe("FAIL");
+          expect(f!.message).toBe(FIXED_MESSAGE);
+        }
 
         // The unique secret marker must not appear in any finding
         const allMessages = report.findings.map((f) => f.message).join(" ");
@@ -367,13 +374,15 @@ describe("magic-substring bypass — recognized HTTP status is always classified
     }
   }, TIMEOUT);
 
-  it("403 with 'Redirect loop' body → still HTTP_ERROR (not REDIRECT_LOOP)", async () => {
+  it("403 with 'Redirect loop' body → AUTH_FORBIDDEN (not REDIRECT_LOOP, not HTTP_ERROR)", async () => {
     const body = `Redirect loop LEAK_FROM_403 ${SECRET}`;
     const server = await startHttpStatusServer(403, body, "text/plain");
     try {
       const report = await runCheck(server.url, { ...DEV, timeoutMs: 3000 });
-      expect(report.findings.some((f) => f.code === "HTTP_ERROR")).toBe(true);
+      // v0.3.0: 403 → AUTH_FORBIDDEN (not HTTP_ERROR and not REDIRECT_LOOP)
+      expect(report.findings.some((f) => f.code === "AUTH_FORBIDDEN")).toBe(true);
       expect(report.findings.some((f) => f.code === "REDIRECT_LOOP")).toBe(false);
+      expect(report.findings.some((f) => f.code === "HTTP_ERROR")).toBe(false);
       const allMessages = report.findings.map((f) => f.message).join(" ");
       expect(allMessages).not.toContain(SECRET);
       expect(allMessages).not.toContain("LEAK_FROM_403");

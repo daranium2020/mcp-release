@@ -150,7 +150,7 @@ describe("terminal — HTTP report (browser & CLI)", () => {
   });
 
   it("does not show stdio privacy note", () => {
-    expect(toTerminal(makeBrowserHttpReport())).not.toContain("No data was sent to MCP Release");
+    expect(toTerminal(makeBrowserHttpReport())).not.toContain("Credentials are sent only to");
   });
 
   it("does not show tools-not-invoked note", () => {
@@ -166,7 +166,7 @@ describe("terminal — stdio PASS report (CLI)", () => {
   });
 
   it("shows privacy note", () => {
-    expect(toTerminal(makeCliStdioReport())).toContain("No data was sent to MCP Release");
+    expect(toTerminal(makeCliStdioReport())).toContain("Credentials are sent only to the configured MCP endpoint.");
   });
 
   it("shows tools-not-invoked note when tools are present", () => {
@@ -192,7 +192,7 @@ describe("terminal — stdio WARNING report", () => {
   });
 
   it("shows privacy note regardless of status", () => {
-    expect(toTerminal(makeCliStdioReport("WARNING"))).toContain("No data was sent to MCP Release");
+    expect(toTerminal(makeCliStdioReport("WARNING"))).toContain("Credentials are sent only to the configured MCP endpoint.");
   });
 });
 
@@ -231,7 +231,7 @@ describe("markdown — HTTP report (browser)", () => {
   });
 
   it("does not show stdio privacy blockquote", () => {
-    expect(toMarkdown(makeBrowserHttpReport())).not.toContain("> **Privacy:**");
+    expect(toMarkdown(makeBrowserHttpReport())).not.toContain("Credentials are sent only to");
   });
 
   it("does not show tools-not-invoked note", () => {
@@ -252,8 +252,8 @@ describe("markdown — stdio PASS report (CLI)", () => {
 
   it("shows privacy blockquote", () => {
     const out = toMarkdown(makeCliStdioReport());
-    expect(out).toContain("> **Privacy:**");
-    expect(out).toContain("No data was sent to MCP Release");
+    expect(out).toContain("> **Security:**");
+    expect(out).toContain("Credentials are sent only to the configured MCP endpoint.");
   });
 
   it("shows tools-not-invoked note when tools are present", () => {
@@ -602,7 +602,7 @@ describe("complete report — CLI stdio", () => {
     expect(out).toContain("stdio");
     expect(out).toContain("PASS");
     expect(out).toContain("Started at:");
-    expect(out).toContain("Privacy: Validation ran locally.");
+    expect(out).toContain("Credentials are sent only to the configured MCP endpoint.");
     expect(out).toContain("not invoked");
     expect(out).toContain("INIT_OK");
     expect(out).toContain("TOOLS_LIST_OK");
@@ -613,7 +613,7 @@ describe("complete report — CLI stdio", () => {
     expect(out).toContain("**Transport:** stdio (local process)");
     expect(out).toContain("**MCP Release:** v0.2.1");
     expect(out).toContain("**Started at:**");
-    expect(out).toContain("> **Privacy:**");
+    expect(out).toContain("> **Security:**");
     expect(out).toContain("> **Note:** Tools were discovered but not invoked.");
     expect(out).toContain("| Passed | Warnings | Failures |");
   });
@@ -640,7 +640,7 @@ describe("complete report — GitHub Actions stdio", () => {
     const out = toTerminal(report);
     expect(out).toContain("WARNING");
     expect(out).toContain("stdio");
-    expect(out).toContain("Privacy: Validation ran locally.");
+    expect(out).toContain("Credentials are sent only to the configured MCP endpoint.");
     expect(out).toContain("STDIO_UNEXPECTED_OUTPUT");
   });
 
@@ -648,7 +648,7 @@ describe("complete report — GitHub Actions stdio", () => {
     const out = toMarkdown(report);
     expect(out).toContain("Remediation");
     expect(out).toContain(REMEDIATION["STDIO_UNEXPECTED_OUTPUT"]!);
-    expect(out).toContain("> **Privacy:**");
+    expect(out).toContain("> **Security:**");
   });
 
   it("JSON has executionEnvironment: github-actions", () => {
@@ -681,7 +681,7 @@ describe("backward compat — old reports without transportType, startedAt, exec
     const out = toTerminal(oldReport);
     expect(out).toContain("PASS");
     expect(out).not.toContain("Transport:");
-    expect(out).not.toContain("Privacy:");
+    expect(out).not.toContain("Credentials are sent only to");
     expect(out).toContain("Started at:"); // falls back to checkedAt
   });
 
@@ -689,7 +689,7 @@ describe("backward compat — old reports without transportType, startedAt, exec
     const out = toMarkdown(oldReport);
     expect(out).toContain("PASS");
     expect(out).not.toContain("**Transport:**");
-    expect(out).not.toContain("> **Privacy:**");
+    expect(out).not.toContain("Credentials are sent only to");
     expect(out).toContain("**Started at:**"); // falls back to checkedAt
   });
 

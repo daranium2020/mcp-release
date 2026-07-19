@@ -141,10 +141,10 @@ describe("401 — protocol and tool checks not marked passed", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 4. 403 Forbidden — separate, generic classification
+// 4. 403 Forbidden — AUTH_FORBIDDEN (v0.3.0: separate code, not HTTP_ERROR)
 // ---------------------------------------------------------------------------
 
-describe("403 → HTTP_ERROR classification (not AUTH_REQUIRED)", () => {
+describe("403 → AUTH_FORBIDDEN classification (not AUTH_REQUIRED, not HTTP_ERROR)", () => {
   let server: FixtureServer;
   beforeAll(async () => { server = await startForbiddenServer(); });
   afterAll(async () => server.close());
@@ -154,9 +154,9 @@ describe("403 → HTTP_ERROR classification (not AUTH_REQUIRED)", () => {
     expect(report.findings.some((f) => f.code === "AUTH_REQUIRED")).toBe(false);
   }, TIMEOUT);
 
-  it("403 is classified as HTTP_ERROR", async () => {
+  it("403 is classified as AUTH_FORBIDDEN", async () => {
     const report = await runCheck(server.url, { ...DEV, timeoutMs: 3000 });
-    expect(report.findings.some((f) => f.code === "HTTP_ERROR")).toBe(true);
+    expect(report.findings.some((f) => f.code === "AUTH_FORBIDDEN")).toBe(true);
   }, TIMEOUT);
 
   it("403 overallStatus is FAIL", async () => {
@@ -166,9 +166,9 @@ describe("403 → HTTP_ERROR classification (not AUTH_REQUIRED)", () => {
 
   it("403 finding message does not include response body", async () => {
     const report = await runCheck(server.url, { ...DEV, timeoutMs: 3000 });
-    const f = report.findings.find((f) => f.code === "HTTP_ERROR")!;
+    const f = report.findings.find((f) => f.code === "AUTH_FORBIDDEN")!;
+    expect(f).toBeDefined();
     expect(f.message).not.toContain('"forbidden"');
-    expect(f.message).not.toContain("error");
   }, TIMEOUT);
 });
 

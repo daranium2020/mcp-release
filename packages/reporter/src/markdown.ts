@@ -69,7 +69,7 @@ export function toMarkdown(report: CheckReport): string {
 
   if (report.transportType === "stdio") {
     lines.push(
-      `> **Privacy:** Validation ran locally on your machine or CI runner. No data was sent to MCP Release.`,
+      `> **Security:** Credentials are sent only to the configured MCP endpoint. They are never sent to or stored by MCP Release. Scenario execution and report generation run locally in the CLI or GitHub Actions runner.`,
     );
     lines.push(``);
     if (report.tools.length > 0) {

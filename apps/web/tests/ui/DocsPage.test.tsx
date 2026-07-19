@@ -39,14 +39,14 @@ describe("DocsPage: content", () => {
     expect(text).toContain("does not guarantee");
   });
 
-  // ---- AUTH_REQUIRED ----
+  // ---- Authentication behavior ----
 
-  it("has an AUTH_REQUIRED section", () => {
+  it("has an authentication behavior section", () => {
     render(<DocsPage />);
     const h2s = screen
       .getAllByRole("heading", { level: 2 })
       .map((el) => el.textContent?.toLowerCase() ?? "");
-    expect(h2s.some((t) => t.includes("auth_required"))).toBe(true);
+    expect(h2s.some((t) => t.includes("authentication"))).toBe(true);
   });
 
   it("explains authenticated endpoints are not checked", () => {

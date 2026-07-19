@@ -2,11 +2,14 @@ import { program } from "commander";
 import {
   runCheck,
   runStdioCheck,
+  runScenarios,
+  buildConfigReport,
   buildRequestHeaders,
 } from "@mcp-release/core";
-import { toJson, toMarkdown, toTerminal } from "@mcp-release/reporter";
+import { toJson, toMarkdown, toTerminal, toJsonConfig, toMarkdownConfig, toTerminalConfig } from "@mcp-release/reporter";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve, dirname as pathDirname } from "node:path";
+import { loadConfig, resolveConfigHeaders, toScenarioInput } from "./config.js";
 
 // Injected at build time by tsup define — avoids import.meta.url in CJS bundle
 declare const __CLI_VERSION__: string;
@@ -29,6 +32,7 @@ type CheckOptions = {
   stdio: boolean;
   command?: string;
   cwd?: string;
+  config?: string;
   header: string[];
   headerEnv: string[];
   bearerTokenEnv?: string;
@@ -61,6 +65,10 @@ program
   .option(
     "--cwd <dir>",
     "Working directory for the stdio server process (used with --stdio)",
+  )
+  .option(
+    "--config <path>",
+    "Path to a mcp-release.config.yml file. Runs all scenarios defined in the file.",
   )
   .option(
     "--header <header>",
@@ -114,6 +122,99 @@ program
     false,
   )
   .action(async (url: string | undefined, options: CheckOptions) => {
+    // ── Config file mode ───────────────────────────────────────────────────
+    if (options.config) {
+      let cfg;
+      try {
+        cfg = loadConfig(options.config);
+      } catch (err) {
+        process.stderr.write(`Error: ${err instanceof Error ? err.message : String(err)}\n`);
+        process.exit(2);
+      }
+
+      let baseHeaders: Record<string, string> = {};
+      try {
+        baseHeaders = resolveConfigHeaders(cfg.headers, process.env as Record<string, string | undefined>);
+      } catch (err) {
+        process.stderr.write(`Error: ${err instanceof Error ? err.message : String(err)}\n`);
+        process.exit(2);
+      }
+
+      const scenarios = cfg.scenarios.map((s) =>
+        toScenarioInput(s, process.env as Record<string, string | undefined>),
+      );
+
+      if (scenarios.length === 0) {
+        process.stderr.write("Error: config file has no scenarios defined\n");
+        process.exit(2);
+      }
+
+      const baseCheckOptions = {
+        timeoutMs: cfg.timeouts.connectMs ?? options.timeoutMs,
+        maxRedirects: options.maxRedirects,
+        allowHttp: options.allowHttp,
+        allowPrivateNetworks: true,
+        ...(cfg.timeouts.responseMs !== undefined ? { responseTimeoutMs: cfg.timeouts.responseMs } : {}),
+        ...(Object.keys(baseHeaders).length > 0 ? { requestHeaders: baseHeaders } : {}),
+      };
+
+      const startedAt = new Date().toISOString();
+      const startMs = Date.now();
+
+      let scenarioResults;
+      try {
+        scenarioResults = await runScenarios(
+          cfg.endpoint,
+          scenarios,
+          baseCheckOptions,
+          {
+            ...(cfg.retries.maxAttempts !== undefined ? { maxAttempts: cfg.retries.maxAttempts } : {}),
+            ...(cfg.retries.backoffMs !== undefined ? { backoffMs: cfg.retries.backoffMs } : {}),
+            retryOn: cfg.retries.retryOn ?? [],
+          },
+        );
+      } catch (err) {
+        process.stderr.write(
+          `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+        process.exit(3);
+      }
+
+      const configReport = {
+        ...buildConfigReport(cfg.endpoint, cfg.fileBasename, scenarioResults, startedAt, startMs),
+        mcpReleaseVersion: __CLI_VERSION__,
+        executionEnvironment: "cli" as const,
+      };
+
+      if (options.json) {
+        process.stdout.write(toJsonConfig(configReport) + "\n");
+      } else if (options.markdown) {
+        process.stdout.write(toMarkdownConfig(configReport) + "\n");
+      } else {
+        process.stdout.write(toTerminalConfig(configReport));
+      }
+
+      if (options.out) {
+        const content = options.markdown && !options.json
+          ? toMarkdownConfig(configReport)
+          : toJsonConfig(configReport);
+        try {
+          const outPath = resolve(options.out);
+          mkdirSync(pathDirname(outPath), { recursive: true });
+          writeFileSync(outPath, content, "utf8");
+        } catch (err) {
+          process.stderr.write(
+            `Error writing report: ${err instanceof Error ? err.message : String(err)}\n`,
+          );
+          process.exit(3);
+        }
+      }
+
+      if (configReport.overallStatus === "FAIL") process.exit(1);
+      if (configReport.overallStatus === "WARNING" && options.failOnWarning) process.exit(4);
+      process.exit(0);
+    }
+
     let report;
 
     if (options.stdio) {
