@@ -65129,7 +65129,7 @@ async function connectToMcpServer(serverUrl, opts = {}) {
   const timeoutPromise = new Promise(
     (_, reject) => setTimeout(
       () => reject(new TransportError("Connection timeout")),
-      timeoutMs
+      timeoutMs + 1
     )
   );
   let protocolVersion = "unknown";

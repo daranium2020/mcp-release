@@ -19,6 +19,7 @@ import {
   startRateLimitThenSuccessServer,
   startAlwaysRateLimitServer,
   startTransientFailureServer,
+  startResponseTimeoutServer,
   type FixtureServer,
 } from "../../../fixtures/servers/src/index.js";
 
@@ -339,6 +340,129 @@ describe("runScenarios — transient failure retry", () => {
       await fresh.close();
     }
   }, TIMEOUT);
+});
+
+// ---------------------------------------------------------------------------
+// 8. Exact timeout finding codes — RESPONSE_TIMEOUT vs CONNECT_TIMEOUT
+// ---------------------------------------------------------------------------
+
+describe("runScenarios — exact timeout finding codes", () => {
+  let server: FixtureServer;
+  beforeAll(async () => { server = await startResponseTimeoutServer(); });
+  afterAll(async () => server.close());
+
+  it("RESPONSE_TIMEOUT when inner timer fires first (responseTimeoutMs < timeoutMs+1)", async () => {
+    // inner = responseTimeoutMs = 300 ms; outer = timeoutMs+1 = 5001 ms → inner wins.
+    const [result] = await runScenarios(
+      server.url,
+      [{ name: "resp-timeout", extraHeaders: {}, removeHeaders: [], expected: {} }],
+      { allowHttp: true, responseTimeoutMs: 300, timeoutMs: 5000 },
+    );
+    expect(result.report.findings.some((f) => f.code === "RESPONSE_TIMEOUT")).toBe(true);
+    expect(result.report.findings.some((f) => f.code === "CONNECT_TIMEOUT")).toBe(false);
+  }, SLOW);
+
+  it("CONNECT_TIMEOUT when outer timer fires first (responseTimeoutMs >> timeoutMs+1)", async () => {
+    // outer = timeoutMs+1 = 301 ms; inner = responseTimeoutMs = 5000 ms → outer wins.
+    const [result] = await runScenarios(
+      server.url,
+      [{ name: "conn-timeout", extraHeaders: {}, removeHeaders: [], expected: {} }],
+      { allowHttp: true, timeoutMs: 300, responseTimeoutMs: 5000 },
+    );
+    expect(result.report.findings.some((f) => f.code === "CONNECT_TIMEOUT")).toBe(true);
+    expect(result.report.findings.some((f) => f.code === "RESPONSE_TIMEOUT")).toBe(false);
+  }, SLOW);
+});
+
+// ---------------------------------------------------------------------------
+// 9. Retry category isolation — connection-failure vs response-timeout
+// ---------------------------------------------------------------------------
+
+describe("runScenarios — retry category isolation", () => {
+  let server: FixtureServer;
+  beforeAll(async () => { server = await startResponseTimeoutServer(); });
+  afterAll(async () => server.close());
+
+  it("RESPONSE_TIMEOUT is NOT retried when retryOn contains only connection-failure", async () => {
+    const [result] = await runScenarios(
+      server.url,
+      [{ name: "no-retry", extraHeaders: {}, removeHeaders: [], expected: {} }],
+      { allowHttp: true, responseTimeoutMs: 300, timeoutMs: 5000 },
+      { maxAttempts: 3, backoffMs: 100, retryOn: ["connection-failure"] },
+    );
+    expect(result.attempts).toBe(1);
+    expect(result.report.findings.some((f) => f.code === "RESPONSE_TIMEOUT")).toBe(true);
+  }, SLOW);
+
+  it("RESPONSE_TIMEOUT IS retried when retryOn contains response-timeout", async () => {
+    // Both attempts time out → RETRY_EXHAUSTED added at attempt 2.
+    const [result] = await runScenarios(
+      server.url,
+      [{ name: "should-retry", extraHeaders: {}, removeHeaders: [], expected: {} }],
+      { allowHttp: true, responseTimeoutMs: 300, timeoutMs: 5000 },
+      { maxAttempts: 2, backoffMs: 100, retryOn: ["response-timeout"] },
+    );
+    expect(result.attempts).toBeGreaterThanOrEqual(2);
+    expect(result.retryCategory).toBe("response-timeout");
+  }, SLOW);
+
+  it("CONNECT_TIMEOUT is NOT retried when retryOn contains only response-timeout", async () => {
+    const [result] = await runScenarios(
+      server.url,
+      [{ name: "no-retry", extraHeaders: {}, removeHeaders: [], expected: {} }],
+      { allowHttp: true, timeoutMs: 300, responseTimeoutMs: 5000 },
+      { maxAttempts: 3, backoffMs: 100, retryOn: ["response-timeout"] },
+    );
+    expect(result.attempts).toBe(1);
+    expect(result.report.findings.some((f) => f.code === "CONNECT_TIMEOUT")).toBe(true);
+  }, SLOW);
+
+  it("CONNECT_TIMEOUT IS retried when retryOn contains connection-failure", async () => {
+    // Both attempts time out → RETRY_EXHAUSTED added at attempt 2.
+    const [result] = await runScenarios(
+      server.url,
+      [{ name: "should-retry", extraHeaders: {}, removeHeaders: [], expected: {} }],
+      { allowHttp: true, timeoutMs: 300, responseTimeoutMs: 5000 },
+      { maxAttempts: 2, backoffMs: 100, retryOn: ["connection-failure"] },
+    );
+    expect(result.attempts).toBeGreaterThanOrEqual(2);
+    expect(result.retryCategory).toBe("connection-failure");
+  }, SLOW);
+});
+
+// ---------------------------------------------------------------------------
+// 10. SCENARIO_TIMEOUT — fires at deadline and is never retried
+// ---------------------------------------------------------------------------
+
+describe("runScenarios — SCENARIO_TIMEOUT", () => {
+  let server: FixtureServer;
+  beforeAll(async () => { server = await startResponseTimeoutServer(); });
+  afterAll(async () => server.close());
+
+  it("emits SCENARIO_TIMEOUT when scenario deadline is exceeded", async () => {
+    // Attempt 1: responseTimeoutMs=200 ms → RESPONSE_TIMEOUT after ~200 ms.
+    // backoffMs=150 ms sleep.  Attempt 2 starts at ~350 ms > scenarioTimeoutMs=300 → SCENARIO_TIMEOUT.
+    const [result] = await runScenarios(
+      server.url,
+      [{ name: "deadline", extraHeaders: {}, removeHeaders: [], expected: {} }],
+      { allowHttp: true, responseTimeoutMs: 200, timeoutMs: 5000 },
+      { maxAttempts: 5, backoffMs: 150, retryOn: ["response-timeout"] },
+      300, // scenarioTimeoutMs
+    );
+    expect(result.report.findings.some((f) => f.code === "SCENARIO_TIMEOUT")).toBe(true);
+  }, SLOW);
+
+  it("SCENARIO_TIMEOUT is never accompanied by RETRY_EXHAUSTED", async () => {
+    const [result] = await runScenarios(
+      server.url,
+      [{ name: "deadline-no-exhaust", extraHeaders: {}, removeHeaders: [], expected: {} }],
+      { allowHttp: true, responseTimeoutMs: 200, timeoutMs: 5000 },
+      { maxAttempts: 5, backoffMs: 150, retryOn: ["response-timeout"] },
+      300,
+    );
+    expect(result.report.findings.some((f) => f.code === "RETRY_EXHAUSTED")).toBe(false);
+    expect(result.report.findings.some((f) => f.code === "SCENARIO_TIMEOUT")).toBe(true);
+  }, SLOW);
 });
 
 // ---------------------------------------------------------------------------

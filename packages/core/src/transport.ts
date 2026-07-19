@@ -493,10 +493,14 @@ export async function connectToMcpServer(
     // This cast resolves the internal type inconsistency; the runtime behaviour is correct.
     transport as unknown as Transport,
   );
+  // +1 ms ensures the per-request responseTimedOut timer inside fetchChain fires before
+  // this outer backstop when both are configured to the same delay. Without the offset
+  // the outer promise (registered first) would win the race and incorrectly produce
+  // CONNECT_TIMEOUT even when the TCP connection was already established.
   const timeoutPromise = new Promise<never>((_, reject) =>
     setTimeout(
       () => reject(new TransportError("Connection timeout")),
-      timeoutMs,
+      timeoutMs + 1,
     ),
   );
 

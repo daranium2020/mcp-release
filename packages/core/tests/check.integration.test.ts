@@ -149,14 +149,28 @@ describe("runCheck — timeout server", () => {
   });
   afterAll(async () => server.close());
 
-  it("returns FAIL with TIMEOUT finding", async () => {
+  it("returns FAIL with RESPONSE_TIMEOUT when inner timer fires first", async () => {
+    // No responseTimeoutMs → defaults to timeoutMs.  The outer backstop gets +1 ms so
+    // the inner responseTimedOut timer always fires first → RESPONSE_TIMEOUT.
     const report = await runCheck(server.url, {
       ...SSRF_OPTS,
       timeoutMs: 500,
     });
     expect(report.overallStatus).toBe("FAIL");
-    const failCodes = ["TIMEOUT", "TRANSPORT_ERROR", "CONNECT_TIMEOUT"];
-    expect(report.findings.some((f) => failCodes.includes(f.code))).toBe(true);
+    expect(report.findings.some((f) => f.code === "RESPONSE_TIMEOUT")).toBe(true);
+    expect(report.findings.some((f) => f.code === "CONNECT_TIMEOUT")).toBe(false);
+  }, 10000);
+
+  it("returns FAIL with CONNECT_TIMEOUT when responseTimeoutMs exceeds outer timer", async () => {
+    // outer timer = timeoutMs + 1 = 301 ms; inner = responseTimeoutMs = 5000 ms → outer wins.
+    const report = await runCheck(server.url, {
+      ...SSRF_OPTS,
+      timeoutMs: 300,
+      responseTimeoutMs: 5000,
+    });
+    expect(report.overallStatus).toBe("FAIL");
+    expect(report.findings.some((f) => f.code === "CONNECT_TIMEOUT")).toBe(true);
+    expect(report.findings.some((f) => f.code === "RESPONSE_TIMEOUT")).toBe(false);
   }, 10000);
 });
 
