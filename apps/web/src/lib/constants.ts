@@ -6,7 +6,7 @@ export const SITE_DESCRIPTION = "MCP server validation";
 
 // Product version embedded in all browser-originated reports.
 // Update alongside root package.json and all workspace package versions.
-export const PRODUCT_VERSION = "0.2.1";
+export const PRODUCT_VERSION = "0.3.0";
 
 // Canonical public URL for metadataBase and Open Graph.
 export const SITE_URL = "https://mcprelease.dev";

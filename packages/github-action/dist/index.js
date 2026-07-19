@@ -66667,7 +66667,7 @@ async function main() {
       { command: inputs.command, ...cwdOpt },
       { startupTimeoutMs: inputs.timeoutMs }
     );
-    report = { ...report, mcpReleaseVersion: "0.2.1", executionEnvironment: "github-actions" };
+    report = { ...report, mcpReleaseVersion: "0.3.0", executionEnvironment: "github-actions" };
   } else {
     core4.info(`Checking MCP server: ${inputs.safeEndpoint}`);
     if (inputs.developmentMode) {
@@ -66684,7 +66684,7 @@ async function main() {
       allowHttp: inputs.developmentMode,
       ...Object.keys(inputs.requestHeaders).length > 0 ? { requestHeaders: inputs.requestHeaders } : {}
     });
-    report = { ...report, mcpReleaseVersion: "0.2.1", executionEnvironment: "github-actions" };
+    report = { ...report, mcpReleaseVersion: "0.3.0", executionEnvironment: "github-actions" };
   }
   const allFindings = [
     ...report.findings,

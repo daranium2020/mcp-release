@@ -2,6 +2,44 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.3.0 - 2026-07-20
+
+### Added
+
+- **Configuration-file scenarios** — `mcp-release check --config mcp-release.config.yml` runs multiple named scenarios (authenticated, unauthenticated, and expected-failure) in a single command. Scenarios are defined in YAML with `name`, `headers`, `removeHeaders`, and `expect` blocks.
+- **Runtime environment-variable substitution** — header values in the config file expand `${ENV_VAR}` at runtime. Tokens are never stored or included in reports.
+- **Auth finding codes** for authenticated and expected-negative scenarios:
+  - `AUTH_REQUIRED` (WARNING) — 401 response with no credentials supplied.
+  - `AUTH_INVALID` (FAIL) — 401 response when credentials are present and the server rejects them. Also produced when the server returns RFC 6750 `error="invalid_token"` because that code covers expired, revoked, and malformed tokens and is too broad for expiry-specific classification.
+  - `AUTH_EXPIRED` (FAIL) — 401 response with credentials present and an unambiguous expiry indicator: `WWW-Authenticate: Bearer error="expired"` or `error="token_expired"`. Only these two non-standard codes produce `AUTH_EXPIRED`.
+  - `AUTH_FORBIDDEN` (FAIL) — 403 response; credentials lack required permissions.
+- **`SCENARIO_MISMATCH`** (FAIL) — added when a scenario's `expect` block does not match the actual outcome, regardless of failure category (auth, rate-limit, timeout, server-error, or any other). Replaces the internal `AUTH_SCENARIO_MISMATCH` prototype code, which was never publicly released.
+- **HTTP 429 detection and Retry-After support**:
+  - `RATE_LIMITED` (FAIL) — server returned 429 Too Many Requests.
+  - `RETRY_AFTER_INVALID` (WARNING) — Retry-After header present but not parseable.
+  - Retry-After is honoured in both integer-seconds and HTTP-date formats.
+- **Retry system** — retries are **disabled by default**; each category must be opted in explicitly via `retryOn`:
+  - `rate-limit` — retry on 429.
+  - `server-error` — retry on 5xx.
+  - `connection-failure` — retry on `CONNECT_TIMEOUT` or `TRANSPORT_ERROR`.
+  - `response-timeout` — retry on `RESPONSE_TIMEOUT`.
+  - `RETRY_EXHAUSTED` (FAIL) added when all `maxAttempts` attempts fail.
+- **Timeout classification** — connect and response timeouts are now reported as distinct codes:
+  - `CONNECT_TIMEOUT` (FAIL) — TLS/TCP connection did not complete within the timeout.
+  - `RESPONSE_TIMEOUT` (FAIL) — connection succeeded but no HTTP response arrived in time.
+- **`SCENARIO_TIMEOUT`** (FAIL) — hard wall-clock deadline per scenario. The deadline aborts in-flight requests and backoff sleeps; it is checked before per-attempt timers everywhere to ensure deterministic precedence. Never accompanied by `RETRY_EXHAUSTED`.
+- **Retry attempts and categories in reports** — `ScenarioResult` includes `attempts` (total attempt count) and `retryCategory` (the category that triggered retries, if any).
+- **Expanded redaction** — credential headers (`Authorization`, `Cookie`, `X-API-Key`, and others), URL-embedded credentials, shell command text, environment variable values, and local filesystem paths are all redacted from reports, logs, and GitHub Actions summaries.
+- **Config-file report parity** — terminal, JSON, Markdown, and GitHub Actions reports all include scenario names, expected vs. actual outcome, attempt count, retry category, duration, and `SCENARIO_MISMATCH` findings when expectations are not met.
+- **GitHub Action `config` input** — pass `config: mcp-release.config.yml` to the action to run multi-scenario validation.
+
+### Notes
+
+- Backward compatibility: all existing single-endpoint HTTP and stdio checks (without a config file) continue to work without modification.
+- Tools are still discovered and validated but never invoked. No tool arguments are constructed or sent.
+- `@mcp-release/cli` is bumped to 0.3.0 and **should be published to npm** with this release.
+- The GitHub Action (`daranium2020/mcp-release`) should be tagged `v0.3.0`.
+
 ## 0.2.1 - 2026-07-17
 
 ### Added
