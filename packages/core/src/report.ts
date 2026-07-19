@@ -7,9 +7,19 @@ export const FindingCode = z.enum([
   // Transport / connectivity
   "TRANSPORT_ERROR",
   "AUTH_REQUIRED",
+  "AUTH_INVALID",
+  "AUTH_EXPIRED",
+  "AUTH_FORBIDDEN",
+  "AUTH_SCENARIO_MISMATCH",
   "REMOTE_HTTP_ERROR",
   "HTTP_ERROR",
   "TIMEOUT",
+  "CONNECT_TIMEOUT",
+  "RESPONSE_TIMEOUT",
+  "SCENARIO_TIMEOUT",
+  "RATE_LIMITED",
+  "RETRY_AFTER_INVALID",
+  "RETRY_EXHAUSTED",
   "REDIRECT_LIMIT_EXCEEDED",
   "REDIRECT_LOOP",
   "PROTOCOL_DOWNGRADE",
@@ -94,6 +104,11 @@ export const CheckReport = z.object({
     .nullable(),
   findings: z.array(Finding),
   tools: z.array(ToolReport),
+  // Added in v0.3.0 — present when this report was produced as part of a named
+  // scenario (config-file run). Optional for backward compatibility.
+  scenarioName: z.string().optional(),
+  // Number of attempts made (>1 when retries occurred). Optional; absent means 1.
+  attempts: z.number().int().positive().optional(),
 });
 export type CheckReport = z.infer<typeof CheckReport>;
 

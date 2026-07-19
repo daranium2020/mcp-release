@@ -56,6 +56,12 @@ export type ConnectOptions = {
    * redirect-handling logic in fetchChain.
    */
   requestHeaders?: Record<string, string>;
+  /**
+   * Timeout for each individual HTTP response (after the TCP connection is
+   * established). When unset, falls back to timeoutMs.
+   * Added in v0.3.0 for fine-grained timeout classification.
+   */
+  responseTimeoutMs?: number;
 };
 
 export type ConnectResult = {
@@ -84,6 +90,33 @@ export class TransportError extends Error {
   ) {
     super(message);
     this.name = "TransportError";
+  }
+}
+
+/**
+ * Thrown when the server returns HTTP 401.
+ * Carries the raw WWW-Authenticate header (RFC 9110 §11.6.1 / RFC 6750 §3.1)
+ * so check.ts can inspect only the structured `error=` parameter — never the
+ * body or error_description — to distinguish AUTH_EXPIRED from AUTH_INVALID.
+ */
+export class AuthChallengeTransportError extends TransportError {
+  constructor(
+    public readonly wwwAuthenticate: string | null,
+    selectedIpFamily?: 4 | 6 | null,
+  ) {
+    super("Authentication required (HTTP 401)", undefined, selectedIpFamily);
+    this.name = "AuthChallengeTransportError";
+  }
+}
+
+/** Thrown when the server returns HTTP 429. Carries Retry-After if present. */
+export class RateLimitTransportError extends TransportError {
+  constructor(
+    public readonly retryAfter: string | null,
+    selectedIpFamily?: 4 | 6 | null,
+  ) {
+    super("Rate limited (HTTP 429)", undefined, selectedIpFamily);
+    this.name = "RateLimitTransportError";
   }
 }
 
@@ -212,6 +245,7 @@ export async function connectToMcpServer(
   opts: ConnectOptions = {},
 ): Promise<ConnectResult> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const responseTimeoutMs = opts.responseTimeoutMs ?? timeoutMs;
   const maxRedirects = opts.maxRedirects ?? MAX_REDIRECTS_DEFAULT;
   const ssrfOpts = opts.ssrf ?? {};
   const requestHeaders = opts.requestHeaders ?? {};
@@ -297,7 +331,11 @@ export async function connectToMcpServer(
     chainVisited.add(urlStr);
 
     const timeoutController = new AbortController();
-    const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
+    let responseTimedOut = false;
+    const timer = setTimeout(() => {
+      responseTimedOut = true;
+      timeoutController.abort();
+    }, responseTimeoutMs);
 
     const existingSignal =
       init?.signal instanceof AbortSignal ? init.signal : undefined;
@@ -314,8 +352,30 @@ export async function connectToMcpServer(
     let response: Response;
     try {
       response = await baseFetch(urlStr, fetchInit);
+    } catch (fetchErr) {
+      clearTimeout(timer);
+      // If our response timeout fired, re-throw as a named TransportError so
+      // check.ts can classify it as RESPONSE_TIMEOUT rather than CONNECT_TIMEOUT.
+      if (responseTimedOut || (fetchErr instanceof DOMException && fetchErr.name === "AbortError")) {
+        throw new TransportError("Response timeout");
+      }
+      throw fetchErr;
     } finally {
       clearTimeout(timer);
+    }
+
+    // Intercept HTTP 401 before the SDK sees it — we need the WWW-Authenticate header.
+    // We read ONLY the structured `error=` parameter in check.ts; the response body
+    // and error_description are never read or included in reports.
+    if (response.status === 401) {
+      const wwwAuthenticate = response.headers.get("www-authenticate");
+      throw new AuthChallengeTransportError(wwwAuthenticate, pinnedIpFamily);
+    }
+
+    // Intercept HTTP 429 before the SDK sees it — we need the Retry-After header.
+    if (response.status === 429) {
+      const retryAfter = response.headers.get("retry-after");
+      throw new RateLimitTransportError(retryAfter, pinnedIpFamily);
     }
 
     // Enforce maximum header count

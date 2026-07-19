@@ -64477,9 +64477,19 @@ var FindingCode = external_exports.enum([
   // Transport / connectivity
   "TRANSPORT_ERROR",
   "AUTH_REQUIRED",
+  "AUTH_INVALID",
+  "AUTH_EXPIRED",
+  "AUTH_FORBIDDEN",
+  "AUTH_SCENARIO_MISMATCH",
   "REMOTE_HTTP_ERROR",
   "HTTP_ERROR",
   "TIMEOUT",
+  "CONNECT_TIMEOUT",
+  "RESPONSE_TIMEOUT",
+  "SCENARIO_TIMEOUT",
+  "RATE_LIMITED",
+  "RETRY_AFTER_INVALID",
+  "RETRY_EXHAUSTED",
   "REDIRECT_LIMIT_EXCEEDED",
   "REDIRECT_LOOP",
   "PROTOCOL_DOWNGRADE",
@@ -64553,7 +64563,12 @@ var CheckReport = external_exports.object({
     version: external_exports.string().optional()
   }).nullable(),
   findings: external_exports.array(Finding),
-  tools: external_exports.array(ToolReport)
+  tools: external_exports.array(ToolReport),
+  // Added in v0.3.0 — present when this report was produced as part of a named
+  // scenario (config-file run). Optional for backward compatibility.
+  scenarioName: external_exports.string().optional(),
+  // Number of attempts made (>1 when retries occurred). Optional; absent means 1.
+  attempts: external_exports.number().int().positive().optional()
 });
 var SEVERITY_ORDER = {
   PASS: 0,
@@ -64858,6 +64873,22 @@ var TransportError = class extends Error {
   cause;
   selectedIpFamily;
 };
+var AuthChallengeTransportError = class extends TransportError {
+  constructor(wwwAuthenticate, selectedIpFamily) {
+    super("Authentication required (HTTP 401)", void 0, selectedIpFamily);
+    this.wwwAuthenticate = wwwAuthenticate;
+    this.name = "AuthChallengeTransportError";
+  }
+  wwwAuthenticate;
+};
+var RateLimitTransportError = class extends TransportError {
+  constructor(retryAfter, selectedIpFamily) {
+    super("Rate limited (HTTP 429)", void 0, selectedIpFamily);
+    this.retryAfter = retryAfter;
+    this.name = "RateLimitTransportError";
+  }
+  retryAfter;
+};
 function resolveConnectorPort(portStr, isHttps) {
   if (portStr === "") {
     return isHttps ? 443 : 80;
@@ -64927,6 +64958,7 @@ function makeFetchWithAgent(agent) {
 }
 async function connectToMcpServer(serverUrl, opts = {}) {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const responseTimeoutMs = opts.responseTimeoutMs ?? timeoutMs;
   const maxRedirects = opts.maxRedirects ?? MAX_REDIRECTS_DEFAULT;
   const ssrfOpts = opts.ssrf ?? {};
   const requestHeaders = opts.requestHeaders ?? {};
@@ -64982,7 +65014,11 @@ async function connectToMcpServer(serverUrl, opts = {}) {
     }
     chainVisited.add(urlStr);
     const timeoutController = new AbortController();
-    const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
+    let responseTimedOut = false;
+    const timer = setTimeout(() => {
+      responseTimedOut = true;
+      timeoutController.abort();
+    }, responseTimeoutMs);
     const existingSignal = init2?.signal instanceof AbortSignal ? init2.signal : void 0;
     const mergedSignal = existingSignal ? AbortSignal.any([timeoutController.signal, existingSignal]) : timeoutController.signal;
     const fetchInit = {
@@ -64993,8 +65029,22 @@ async function connectToMcpServer(serverUrl, opts = {}) {
     let response;
     try {
       response = await baseFetch(urlStr, fetchInit);
+    } catch (fetchErr) {
+      clearTimeout(timer);
+      if (responseTimedOut || fetchErr instanceof DOMException && fetchErr.name === "AbortError") {
+        throw new TransportError("Response timeout");
+      }
+      throw fetchErr;
     } finally {
       clearTimeout(timer);
+    }
+    if (response.status === 401) {
+      const wwwAuthenticate = response.headers.get("www-authenticate");
+      throw new AuthChallengeTransportError(wwwAuthenticate, pinnedIpFamily);
+    }
+    if (response.status === 429) {
+      const retryAfter = response.headers.get("retry-after");
+      throw new RateLimitTransportError(retryAfter, pinnedIpFamily);
     }
     let headerCount = 0;
     response.headers.forEach(() => {
@@ -65350,6 +65400,21 @@ function describeTransportError(err, phase) {
     safeMessage
   };
 }
+function parseRetryAfterMs(retryAfterHeader) {
+  if (retryAfterHeader === null || retryAfterHeader.trim() === "") return null;
+  const trimmed = retryAfterHeader.trim();
+  if (/^\d+$/.test(trimmed)) {
+    const seconds = parseInt(trimmed, 10);
+    if (!Number.isFinite(seconds)) return null;
+    return Math.max(0, seconds * 1e3);
+  }
+  const date4 = new Date(trimmed);
+  if (!Number.isNaN(date4.getTime())) {
+    const waitMs = date4.getTime() - Date.now();
+    return Math.max(0, waitMs);
+  }
+  return null;
+}
 function extractHttpStatus(err) {
   const cause = err.cause;
   if (cause == null || typeof cause !== "object") return null;
@@ -65366,6 +65431,14 @@ function extractRpcErrorCode(err) {
   if (code >= 0) return null;
   return code;
 }
+function parseWwwAuthError(header) {
+  if (!header) return null;
+  const match = /\berror="([^"]+)"/i.exec(header);
+  return match ? match[1].toLowerCase() : null;
+}
+function isExpiredTokenIndicator(errorCode) {
+  return errorCode === "expired" || errorCode === "token_expired";
+}
 async function runCheck(serverUrl, opts = {}) {
   const checkedAt = (/* @__PURE__ */ new Date()).toISOString();
   const startMs = Date.now();
@@ -65381,6 +65454,7 @@ async function runCheck(serverUrl, opts = {}) {
     if (opts.timeoutMs !== void 0) connectOpts.timeoutMs = opts.timeoutMs;
     if (opts.maxRedirects !== void 0) connectOpts.maxRedirects = opts.maxRedirects;
     if (opts.requestHeaders !== void 0) connectOpts.requestHeaders = opts.requestHeaders;
+    if (opts.responseTimeoutMs !== void 0) connectOpts.responseTimeoutMs = opts.responseTimeoutMs;
     connectResult = await connectToMcpServer(serverUrl, connectOpts);
   } catch (err) {
     const durationMs2 = Date.now() - startMs;
@@ -65405,10 +65479,30 @@ async function runCheck(serverUrl, opts = {}) {
       } else {
         findings.push(makeFinding("SSRF_BLOCKED", "FAIL", cause.message, { reason: cause.reason }));
       }
-    } else if (err instanceof TransportError) {
-      const httpStatus = extractHttpStatus(err);
-      const rpcCode = extractRpcErrorCode(err);
-      if (httpStatus === 401) {
+    } else if (err instanceof AuthChallengeTransportError) {
+      const wwwError = parseWwwAuthError(err.wwwAuthenticate);
+      const hasCredentials = opts.requestHeaders !== void 0 && Object.keys(opts.requestHeaders).some(
+        (k) => k.toLowerCase() === "authorization" || k.toLowerCase() === "x-api-key"
+      );
+      if (hasCredentials) {
+        if (isExpiredTokenIndicator(wwwError)) {
+          findings.push(
+            makeFinding(
+              "AUTH_EXPIRED",
+              "FAIL",
+              "The provided credentials have expired or been revoked. Obtain new credentials and retry."
+            )
+          );
+        } else {
+          findings.push(
+            makeFinding(
+              "AUTH_INVALID",
+              "FAIL",
+              "Server rejected the provided credentials (401 Unauthorized)."
+            )
+          );
+        }
+      } else {
         findings.push(
           makeFinding(
             "AUTH_REQUIRED",
@@ -65416,9 +65510,60 @@ async function runCheck(serverUrl, opts = {}) {
             "Server requires authorization. Authenticated checks were not performed."
           )
         );
+      }
+    } else if (err instanceof RateLimitTransportError) {
+      const retryAfterMs = parseRetryAfterMs(err.retryAfter);
+      const context = { attempts: 1 };
+      if (err.retryAfter !== null) context["retryAfter"] = err.retryAfter;
+      if (retryAfterMs === null && err.retryAfter !== null) {
+        findings.push(
+          makeFinding(
+            "RETRY_AFTER_INVALID",
+            "WARNING",
+            "Server returned a Retry-After header that could not be parsed.",
+            { retryAfter: err.retryAfter }
+          )
+        );
+      }
+      findings.push(
+        makeFinding(
+          "RATE_LIMITED",
+          "FAIL",
+          "Server returned 429 Too Many Requests. Retry when the rate limit resets.",
+          context
+        )
+      );
+    } else if (err instanceof TransportError) {
+      const httpStatus = extractHttpStatus(err);
+      const rpcCode = extractRpcErrorCode(err);
+      const hasCredentials = opts.requestHeaders !== void 0 && Object.keys(opts.requestHeaders).some(
+        (k) => k.toLowerCase() === "authorization" || k.toLowerCase() === "x-api-key"
+      );
+      if (httpStatus === 401) {
+        if (hasCredentials) {
+          findings.push(
+            makeFinding(
+              "AUTH_INVALID",
+              "FAIL",
+              "Server rejected the provided credentials (401 Unauthorized)."
+            )
+          );
+        } else {
+          findings.push(
+            makeFinding(
+              "AUTH_REQUIRED",
+              "WARNING",
+              "Server requires authorization. Authenticated checks were not performed."
+            )
+          );
+        }
       } else if (httpStatus === 403) {
         findings.push(
-          makeFinding("HTTP_ERROR", "FAIL", "Server returned 403 Forbidden. Access denied.")
+          makeFinding(
+            "AUTH_FORBIDDEN",
+            "FAIL",
+            "Server denied access (403 Forbidden). The credentials may lack required permissions."
+          )
         );
       } else if (httpStatus !== null) {
         findings.push(
@@ -65437,9 +65582,21 @@ async function runCheck(serverUrl, opts = {}) {
             { rpcCode }
           )
         );
-      } else if (err.message.includes("timeout")) {
+      } else if (err.message === "Response timeout") {
         findings.push(
-          makeFinding("TIMEOUT", "FAIL", `Connection timed out: ${err.message}`)
+          makeFinding(
+            "RESPONSE_TIMEOUT",
+            "FAIL",
+            "The server connected but did not return a response within the timeout."
+          )
+        );
+      } else if (err.message === "Connection timeout" || err.message.includes("timeout")) {
+        findings.push(
+          makeFinding(
+            "CONNECT_TIMEOUT",
+            "FAIL",
+            "Could not establish a connection to the server within the timeout."
+          )
         );
       } else if (err.message.includes("Redirect limit")) {
         findings.push(
@@ -66178,6 +66335,16 @@ function toJson(report, pretty = true) {
 var REMEDIATION = {
   TRANSPORT_ERROR: "Verify the server is running and the URL is reachable.",
   AUTH_REQUIRED: "Pass credentials via `--header`, `--header-env`, or `--bearer-token-env`.",
+  AUTH_INVALID: 'The credentials were rejected. Check they are correct and not expired. Note: RFC 6750 error="invalid_token" produces AUTH_INVALID, not AUTH_EXPIRED \u2014 because that code covers expired, revoked, and malformed tokens and is too broad for an expiry-specific classification.',
+  AUTH_EXPIRED: 'The credentials have expired. This code is only produced when the server explicitly returns an unambiguous expiry indicator (error="expired" or error="token_expired"). Obtain new credentials and retry.',
+  AUTH_FORBIDDEN: "Verify the credentials have the required permissions for this endpoint.",
+  AUTH_SCENARIO_MISMATCH: "Review the scenario `expect` block \u2014 the actual outcome did not match.",
+  RATE_LIMITED: "Reduce request frequency, or add `retries.maxAttempts` and `retries.retryOn: [rate-limit]` to the config to retry automatically.",
+  RETRY_AFTER_INVALID: "The server returned a Retry-After value that is not a valid integer or HTTP date.",
+  RETRY_EXHAUSTED: "All configured retry attempts failed. Check server health or increase `retries.maxAttempts`.",
+  CONNECT_TIMEOUT: "Increase `timeouts.connectMs` in the config or verify the server is reachable.",
+  RESPONSE_TIMEOUT: "Increase `timeouts.responseMs` in the config or check that the server responds promptly.",
+  SCENARIO_TIMEOUT: "Increase the scenario time budget or reduce the number of retries.",
   REMOTE_HTTP_ERROR: "Check server logs for details of the unexpected HTTP response.",
   HTTP_ERROR: "Verify the endpoint URL is correct and the server is accessible.",
   TIMEOUT: "Increase `--timeout-ms` or check that the server responds promptly.",
@@ -66256,7 +66423,7 @@ function toMarkdown(report) {
   lines.push(``);
   if (report.transportType === "stdio") {
     lines.push(
-      `> **Privacy:** Validation ran locally on your machine or CI runner. No data was sent to MCP Release.`
+      `> **Security:** Credentials are sent only to the configured MCP endpoint. They are never sent to or stored by MCP Release. Scenario execution and report generation run locally in the CLI or GitHub Actions runner.`
     );
     lines.push(``);
     if (report.tools.length > 0) {

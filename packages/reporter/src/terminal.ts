@@ -47,7 +47,7 @@ export function toTerminal(report: CheckReport): string {
 
   if (report.transportType === "stdio") {
     lines.push(
-      kleur.dim("\nPrivacy: Validation ran locally. No data was sent to MCP Release."),
+      kleur.dim("\nCredentials are sent only to the configured MCP endpoint. They are never sent to or stored by MCP Release.\nScenario execution and report generation run locally in the CLI or GitHub Actions runner."),
     );
   }
 

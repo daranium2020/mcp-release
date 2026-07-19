@@ -155,7 +155,7 @@ describe("runCheck — timeout server", () => {
       timeoutMs: 500,
     });
     expect(report.overallStatus).toBe("FAIL");
-    const failCodes = ["TIMEOUT", "TRANSPORT_ERROR"];
+    const failCodes = ["TIMEOUT", "TRANSPORT_ERROR", "CONNECT_TIMEOUT"];
     expect(report.findings.some((f) => failCodes.includes(f.code))).toBe(true);
   }, 10000);
 });

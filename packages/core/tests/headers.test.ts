@@ -208,14 +208,16 @@ describe("runCheck — authenticated server", () => {
     expect(report.tools[0]?.name).toBe("secure_tool");
   });
 
-  it("returns AUTH_REQUIRED when wrong token is provided", async () => {
+  it("returns AUTH_INVALID (FAIL) when wrong token is provided", async () => {
     const report = await runCheck(authServer.url, {
       allowHttp: true,
       allowPrivateNetworks: true,
       requestHeaders: { Authorization: "Bearer wrong-token" },
     });
-    expect(report.overallStatus).toBe("WARNING");
-    expect(report.findings.some((f) => f.code === "AUTH_REQUIRED")).toBe(true);
+    // v0.3.0: 401 with credentials present → AUTH_INVALID (FAIL), not AUTH_REQUIRED (WARNING)
+    expect(report.overallStatus).toBe("FAIL");
+    expect(report.findings.some((f) => f.code === "AUTH_INVALID")).toBe(true);
+    expect(report.findings.some((f) => f.code === "AUTH_REQUIRED")).toBe(false);
   });
 });
 

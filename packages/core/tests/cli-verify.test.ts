@@ -71,7 +71,7 @@ describe("CLI — timeout fixture", () => {
     const report = JSON.parse(stdout) as { overallStatus: string; findings: Array<{ code: string }> };
     expect(code).toBe(1);
     expect(report.overallStatus).toBe("FAIL");
-    const failCodes = ["TIMEOUT", "TRANSPORT_ERROR"];
+    const failCodes = ["TIMEOUT", "TRANSPORT_ERROR", "CONNECT_TIMEOUT"];
     expect(report.findings.some((f) => failCodes.includes(f.code))).toBe(true);
   }, 15000);
 });

@@ -1,5 +1,17 @@
 export { startValidServer } from "./valid-server.js";
 export {
+  startMissingTokenServer,
+  startInvalidTokenServer,
+  startExpiredTokenServer,
+  startNonStandardExpiredTokenServer,
+  startForbiddenResourceServer,
+  startRateLimitThenSuccessServer,
+  startAlwaysRateLimitServer,
+  startRateLimitDateServer,
+  startTransientFailureServer,
+  startResponseTimeoutServer,
+} from "./auth-scenarios.js";
+export {
   startInvalidToolNameServer,
   startMissingDescriptionServer,
   startInvalidInputSchemaServer,
