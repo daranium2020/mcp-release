@@ -64902,7 +64902,7 @@ function resolveConnectorPort(portStr, isHttps) {
   }
   return p;
 }
-function createPinnedConnector(pinnedHostname, pinnedIp, ssrfOpts) {
+function createPinnedConnector(pinnedHostname, pinnedIp, ssrfOpts, onTcpConnected, socketTimeoutMs) {
   const doConnect = (host, port, servername, isHttps, callback) => {
     if (isHttps) {
       const socket = import_tls.default.connect({
@@ -64912,12 +64912,32 @@ function createPinnedConnector(pinnedHostname, pinnedIp, ssrfOpts) {
         rejectUnauthorized: true
         // NEVER disable TLS verification
       });
-      socket.once("secureConnect", () => callback(null, socket));
-      socket.once("error", (err) => callback(err, null));
+      socket.setTimeout(socketTimeoutMs, () => {
+        socket.destroy(new Error("Connection timeout"));
+      });
+      socket.once("secureConnect", () => {
+        socket.setTimeout(0);
+        onTcpConnected();
+        callback(null, socket);
+      });
+      socket.once("error", (err) => {
+        socket.setTimeout(0);
+        callback(err, null);
+      });
     } else {
       const socket = import_net.default.createConnection({ host, port });
-      socket.once("connect", () => callback(null, socket));
-      socket.once("error", (err) => callback(err, null));
+      socket.setTimeout(socketTimeoutMs, () => {
+        socket.destroy(new Error("Connection timeout"));
+      });
+      socket.once("connect", () => {
+        socket.setTimeout(0);
+        onTcpConnected();
+        callback(null, socket);
+      });
+      socket.once("error", (err) => {
+        socket.setTimeout(0);
+        callback(err, null);
+      });
     }
   };
   return (opts, callback) => {
@@ -64974,6 +64994,7 @@ async function connectToMcpServer(serverUrl, opts = {}) {
   let agent = null;
   let baseFetch;
   let pinnedIpFamily = null;
+  let tcpConnected = false;
   if (resolvedUrl.isHttps && resolvedUrl.resolvedIps.length > 0) {
     const pinnedIp = resolvedUrl.resolvedIps[0];
     const ipNum = import_net.default.isIP(pinnedIp);
@@ -64981,11 +65002,16 @@ async function connectToMcpServer(serverUrl, opts = {}) {
     const connector = createPinnedConnector(
       resolvedUrl.hostname,
       pinnedIp,
-      ssrfOpts
+      ssrfOpts,
+      () => {
+        tcpConnected = true;
+      },
+      timeoutMs
     );
     agent = new import_undici.Agent({ connect: connector });
     baseFetch = makeFetchWithAgent(agent);
   } else {
+    tcpConnected = true;
     baseFetch = fetch;
   }
   let redirectCount = 0;
@@ -65126,10 +65152,13 @@ async function connectToMcpServer(serverUrl, opts = {}) {
     // This cast resolves the internal type inconsistency; the runtime behaviour is correct.
     transport
   );
+  connectPromise.catch(() => void 0);
   const timeoutPromise = new Promise(
     (_, reject) => setTimeout(
-      () => reject(new TransportError("Connection timeout")),
-      timeoutMs + 1
+      () => reject(new TransportError(
+        tcpConnected ? "Response timeout" : "Connection timeout"
+      )),
+      timeoutMs
     )
   );
   let protocolVersion = "unknown";
@@ -65145,7 +65174,7 @@ async function connectToMcpServer(serverUrl, opts = {}) {
       };
     }
   } catch (err) {
-    await agent?.destroy().catch(() => void 0);
+    agent?.destroy().catch(() => void 0);
     const durationMs2 = Date.now() - startMs;
     const msg = redactErrorMessage(err);
     if (err instanceof TransportError) throw err;

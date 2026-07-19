@@ -16,10 +16,13 @@ import type { ScenarioInput } from "../src/scenario-runner.js";
 import {
   startValidServer,
   startMissingTokenServer,
+  startInvalidTokenServer,
+  startExpiredTokenServer,
   startRateLimitThenSuccessServer,
   startAlwaysRateLimitServer,
   startTransientFailureServer,
   startResponseTimeoutServer,
+  startConnectTimeoutServer,
   type FixtureServer,
 } from "../../../fixtures/servers/src/index.js";
 
@@ -149,6 +152,80 @@ describe("runScenarios — scenario mismatch", () => {
     const startMs = Date.now();
     const report = buildConfigReport(server.url, "test.yml", results, new Date().toISOString(), startMs);
     expect(report.overallStatus).toBe("FAIL");
+  }, TIMEOUT);
+});
+
+// ---------------------------------------------------------------------------
+// 3b. AUTH_INVALID — server returns 401 with error="invalid_token"
+// ---------------------------------------------------------------------------
+
+describe("runScenarios — AUTH_INVALID (invalid token credential)", () => {
+  let server: FixtureServer;
+  beforeAll(async () => { server = await startInvalidTokenServer(); });
+  afterAll(async () => server.close());
+
+  it("AUTH_INVALID when credentials sent and server returns error=invalid_token", async () => {
+    const [result] = await runScenarios(
+      server.url,
+      [{ name: "invalid-token", extraHeaders: { Authorization: "Bearer invalid_token_xyz" }, removeHeaders: [], expected: {} }],
+      DEV,
+    );
+    expect(result.report.findings.some((f) => f.code === "AUTH_INVALID")).toBe(true);
+  }, TIMEOUT);
+
+  it("not AUTH_REQUIRED when credentials are present", async () => {
+    const [result] = await runScenarios(
+      server.url,
+      [{ name: "invalid-token", extraHeaders: { Authorization: "Bearer invalid_token_xyz" }, removeHeaders: [], expected: {} }],
+      DEV,
+    );
+    expect(result.report.findings.some((f) => f.code === "AUTH_REQUIRED")).toBe(false);
+  }, TIMEOUT);
+
+  it("not AUTH_EXPIRED when server returns error=invalid_token (not expiry)", async () => {
+    const [result] = await runScenarios(
+      server.url,
+      [{ name: "invalid-token", extraHeaders: { Authorization: "Bearer invalid_token_xyz" }, removeHeaders: [], expected: {} }],
+      DEV,
+    );
+    expect(result.report.findings.some((f) => f.code === "AUTH_EXPIRED")).toBe(false);
+  }, TIMEOUT);
+});
+
+// ---------------------------------------------------------------------------
+// 3c. AUTH_EXPIRED — server returns 401 with error="token_expired"
+// ---------------------------------------------------------------------------
+
+describe("runScenarios — AUTH_EXPIRED (expired token credential)", () => {
+  let server: FixtureServer;
+  beforeAll(async () => { server = await startExpiredTokenServer(); });
+  afterAll(async () => server.close());
+
+  it("AUTH_EXPIRED when credentials sent and server returns error=token_expired", async () => {
+    const [result] = await runScenarios(
+      server.url,
+      [{ name: "expired-token", extraHeaders: { Authorization: "Bearer expired_token_xyz" }, removeHeaders: [], expected: {} }],
+      DEV,
+    );
+    expect(result.report.findings.some((f) => f.code === "AUTH_EXPIRED")).toBe(true);
+  }, TIMEOUT);
+
+  it("not AUTH_REQUIRED when credentials are present", async () => {
+    const [result] = await runScenarios(
+      server.url,
+      [{ name: "expired-token", extraHeaders: { Authorization: "Bearer expired_token_xyz" }, removeHeaders: [], expected: {} }],
+      DEV,
+    );
+    expect(result.report.findings.some((f) => f.code === "AUTH_REQUIRED")).toBe(false);
+  }, TIMEOUT);
+
+  it("not AUTH_INVALID when server returns error=token_expired (not general invalid)", async () => {
+    const [result] = await runScenarios(
+      server.url,
+      [{ name: "expired-token", extraHeaders: { Authorization: "Bearer expired_token_xyz" }, removeHeaders: [], expected: {} }],
+      DEV,
+    );
+    expect(result.report.findings.some((f) => f.code === "AUTH_INVALID")).toBe(false);
   }, TIMEOUT);
 });
 
@@ -346,13 +423,13 @@ describe("runScenarios — transient failure retry", () => {
 // 8. Exact timeout finding codes — RESPONSE_TIMEOUT vs CONNECT_TIMEOUT
 // ---------------------------------------------------------------------------
 
-describe("runScenarios — exact timeout finding codes", () => {
+describe("runScenarios — RESPONSE_TIMEOUT exact finding code", () => {
   let server: FixtureServer;
   beforeAll(async () => { server = await startResponseTimeoutServer(); });
   afterAll(async () => server.close());
 
-  it("RESPONSE_TIMEOUT when inner timer fires first (responseTimeoutMs < timeoutMs+1)", async () => {
-    // inner = responseTimeoutMs = 300 ms; outer = timeoutMs+1 = 5001 ms → inner wins.
+  it("RESPONSE_TIMEOUT when inner timer fires (responseTimeoutMs < timeoutMs)", async () => {
+    // inner = 300 ms; outer = 5000 ms → inner wins → RESPONSE_TIMEOUT.
     const [result] = await runScenarios(
       server.url,
       [{ name: "resp-timeout", extraHeaders: {}, removeHeaders: [], expected: {} }],
@@ -362,15 +439,35 @@ describe("runScenarios — exact timeout finding codes", () => {
     expect(result.report.findings.some((f) => f.code === "CONNECT_TIMEOUT")).toBe(false);
   }, SLOW);
 
-  it("CONNECT_TIMEOUT when outer timer fires first (responseTimeoutMs >> timeoutMs+1)", async () => {
-    // outer = timeoutMs+1 = 301 ms; inner = responseTimeoutMs = 5000 ms → outer wins.
+  it("RESPONSE_TIMEOUT when outer fires on HTTP localhost (tcpConnected=true always)", async () => {
+    // HTTP localhost: TCP connects instantly → tcpConnected=true; outer at 300 ms
+    // fires "Response timeout" even though responseTimeoutMs=5000.
     const [result] = await runScenarios(
       server.url,
-      [{ name: "conn-timeout", extraHeaders: {}, removeHeaders: [], expected: {} }],
+      [{ name: "resp-timeout-outer", extraHeaders: {}, removeHeaders: [], expected: {} }],
       { allowHttp: true, timeoutMs: 300, responseTimeoutMs: 5000 },
     );
-    expect(result.report.findings.some((f) => f.code === "CONNECT_TIMEOUT")).toBe(true);
-    expect(result.report.findings.some((f) => f.code === "RESPONSE_TIMEOUT")).toBe(false);
+    expect(result.report.findings.some((f) => f.code === "RESPONSE_TIMEOUT")).toBe(true);
+    expect(result.report.findings.some((f) => f.code === "CONNECT_TIMEOUT")).toBe(false);
+  }, SLOW);
+});
+
+describe("runScenarios — CONNECT_TIMEOUT exact finding code", () => {
+  it("CONNECT_TIMEOUT when TLS handshake never completes within timeoutMs", async () => {
+    // Raw TCP server on localhost, never speaks TLS. Client connects with HTTPS:
+    // tcpConnected stays false until outer timer fires → CONNECT_TIMEOUT.
+    const server = await startConnectTimeoutServer();
+    try {
+      const [result] = await runScenarios(
+        server.url,
+        [{ name: "conn-timeout", extraHeaders: {}, removeHeaders: [], expected: {} }],
+        { allowPrivateNetworks: true, timeoutMs: 300, responseTimeoutMs: 5000 },
+      );
+      expect(result.report.findings.some((f) => f.code === "CONNECT_TIMEOUT")).toBe(true);
+      expect(result.report.findings.some((f) => f.code === "RESPONSE_TIMEOUT")).toBe(false);
+    } finally {
+      await server.close();
+    }
   }, SLOW);
 });
 
@@ -407,26 +504,35 @@ describe("runScenarios — retry category isolation", () => {
   }, SLOW);
 
   it("CONNECT_TIMEOUT is NOT retried when retryOn contains only response-timeout", async () => {
-    const [result] = await runScenarios(
-      server.url,
-      [{ name: "no-retry", extraHeaders: {}, removeHeaders: [], expected: {} }],
-      { allowHttp: true, timeoutMs: 300, responseTimeoutMs: 5000 },
-      { maxAttempts: 3, backoffMs: 100, retryOn: ["response-timeout"] },
-    );
-    expect(result.attempts).toBe(1);
-    expect(result.report.findings.some((f) => f.code === "CONNECT_TIMEOUT")).toBe(true);
+    const ctServer = await startConnectTimeoutServer();
+    try {
+      const [result] = await runScenarios(
+        ctServer.url,
+        [{ name: "no-retry", extraHeaders: {}, removeHeaders: [], expected: {} }],
+        { allowPrivateNetworks: true, timeoutMs: 300, responseTimeoutMs: 5000 },
+        { maxAttempts: 3, backoffMs: 100, retryOn: ["response-timeout"] },
+      );
+      expect(result.attempts).toBe(1);
+      expect(result.report.findings.some((f) => f.code === "CONNECT_TIMEOUT")).toBe(true);
+    } finally {
+      await ctServer.close();
+    }
   }, SLOW);
 
   it("CONNECT_TIMEOUT IS retried when retryOn contains connection-failure", async () => {
-    // Both attempts time out → RETRY_EXHAUSTED added at attempt 2.
-    const [result] = await runScenarios(
-      server.url,
-      [{ name: "should-retry", extraHeaders: {}, removeHeaders: [], expected: {} }],
-      { allowHttp: true, timeoutMs: 300, responseTimeoutMs: 5000 },
-      { maxAttempts: 2, backoffMs: 100, retryOn: ["connection-failure"] },
-    );
-    expect(result.attempts).toBeGreaterThanOrEqual(2);
-    expect(result.retryCategory).toBe("connection-failure");
+    const ctServer = await startConnectTimeoutServer();
+    try {
+      const [result] = await runScenarios(
+        ctServer.url,
+        [{ name: "should-retry", extraHeaders: {}, removeHeaders: [], expected: {} }],
+        { allowPrivateNetworks: true, timeoutMs: 300, responseTimeoutMs: 5000 },
+        { maxAttempts: 2, backoffMs: 100, retryOn: ["connection-failure"] },
+      );
+      expect(result.attempts).toBeGreaterThanOrEqual(2);
+      expect(result.retryCategory).toBe("connection-failure");
+    } finally {
+      await ctServer.close();
+    }
   }, SLOW);
 });
 
@@ -440,15 +546,30 @@ describe("runScenarios — SCENARIO_TIMEOUT", () => {
   afterAll(async () => server.close());
 
   it("emits SCENARIO_TIMEOUT when scenario deadline is exceeded", async () => {
-    // Attempt 1: responseTimeoutMs=200 ms → RESPONSE_TIMEOUT after ~200 ms.
-    // backoffMs=150 ms sleep.  Attempt 2 starts at ~350 ms > scenarioTimeoutMs=300 → SCENARIO_TIMEOUT.
+    // Attempt 1: RESPONSE_TIMEOUT after ~200 ms. Backoff 150 ms. Attempt 2
+    // deadline check: ~350 ms > 300 ms budget → SCENARIO_TIMEOUT fires before
+    // the second request starts.
     const [result] = await runScenarios(
       server.url,
       [{ name: "deadline", extraHeaders: {}, removeHeaders: [], expected: {} }],
       { allowHttp: true, responseTimeoutMs: 200, timeoutMs: 5000 },
       { maxAttempts: 5, backoffMs: 150, retryOn: ["response-timeout"] },
-      300, // scenarioTimeoutMs
+      300,
     );
+    expect(result.report.findings.some((f) => f.code === "SCENARIO_TIMEOUT")).toBe(true);
+  }, SLOW);
+
+  it("SCENARIO_TIMEOUT reports attempts=1 (only completed requests count)", async () => {
+    // The deadline fires at the top of iteration 2 — before the second request
+    // starts — so only 1 request was actually made.
+    const [result] = await runScenarios(
+      server.url,
+      [{ name: "deadline-attempts", extraHeaders: {}, removeHeaders: [], expected: {} }],
+      { allowHttp: true, responseTimeoutMs: 200, timeoutMs: 5000 },
+      { maxAttempts: 5, backoffMs: 150, retryOn: ["response-timeout"] },
+      300,
+    );
+    expect(result.attempts).toBe(1);
     expect(result.report.findings.some((f) => f.code === "SCENARIO_TIMEOUT")).toBe(true);
   }, SLOW);
 

@@ -152,11 +152,18 @@ export function resolveConnectorPort(portStr: string, isHttps: boolean): number 
  *  - For `pinnedHostname`: always routes to `pinnedIp` (pre-validated, no TOCTOU).
  *  - For any other hostname (cross-origin redirect target): resolves DNS inline
  *    through our SSRF-checking resolver and connects to the first valid IP.
+ *
+ * `onTcpConnected` is called once when the TCP/TLS connection is established.
+ * The outer timeout in connectToMcpServer reads this flag to distinguish
+ * CONNECT_TIMEOUT (TCP never established) from RESPONSE_TIMEOUT (TCP connected
+ * but HTTP response didn't arrive in time), without relying on timer ordering.
  */
 function createPinnedConnector(
   pinnedHostname: string,
   pinnedIp: string,
   ssrfOpts: SsrfOptions,
+  onTcpConnected: () => void,
+  socketTimeoutMs: number,
 ): buildConnector.connector {
   const doConnect = (
     host: string,
@@ -172,12 +179,36 @@ function createPinnedConnector(
         servername,
         rejectUnauthorized: true, // NEVER disable TLS verification
       });
-      socket.once("secureConnect", () => callback(null, socket));
-      socket.once("error", (err) => callback(err, null));
+      // Socket-level connect timeout ensures the connector callback is always
+      // called (with an error) even when the remote never completes the TLS
+      // handshake. Without this, agent.destroy() hangs waiting for a callback
+      // that would never arrive.
+      socket.setTimeout(socketTimeoutMs, () => {
+        socket.destroy(new Error("Connection timeout"));
+      });
+      socket.once("secureConnect", () => {
+        socket.setTimeout(0);
+        onTcpConnected();
+        callback(null, socket);
+      });
+      socket.once("error", (err) => {
+        socket.setTimeout(0);
+        callback(err, null);
+      });
     } else {
       const socket = net.createConnection({ host, port });
-      socket.once("connect", () => callback(null, socket));
-      socket.once("error", (err) => callback(err, null));
+      socket.setTimeout(socketTimeoutMs, () => {
+        socket.destroy(new Error("Connection timeout"));
+      });
+      socket.once("connect", () => {
+        socket.setTimeout(0);
+        onTcpConnected();
+        callback(null, socket);
+      });
+      socket.once("error", (err) => {
+        socket.setTimeout(0);
+        callback(err, null);
+      });
     }
   };
 
@@ -261,10 +292,16 @@ export async function connectToMcpServer(
     throw err;
   }
 
-  // Create pinned agent for HTTPS (closes TOCTOU), or null for HTTP localhost
+  // Create pinned agent for HTTPS (closes TOCTOU), or null for HTTP localhost.
+  // tcpConnected tracks whether the TCP/TLS layer has completed. The outer
+  // timeoutMs timer reads this to emit the correct code: CONNECT_TIMEOUT when
+  // the connection phase itself timed out, or RESPONSE_TIMEOUT when TCP was
+  // already up but no HTTP response arrived. This eliminates any dependency on
+  // which setTimeout fires first when both delays are equal.
   let agent: Agent | null = null;
   let baseFetch: typeof globalThis.fetch;
   let pinnedIpFamily: 4 | 6 | null = null;
+  let tcpConnected = false;
 
   if (resolvedUrl.isHttps && resolvedUrl.resolvedIps.length > 0) {
     const pinnedIp = resolvedUrl.resolvedIps[0]!;
@@ -274,11 +311,15 @@ export async function connectToMcpServer(
       resolvedUrl.hostname,
       pinnedIp,
       ssrfOpts,
+      () => { tcpConnected = true; },
+      timeoutMs,
     );
     agent = new Agent({ connect: connector });
     baseFetch = makeFetchWithAgent(agent);
   } else {
-    // HTTP localhost in dev mode — use global fetch (socket goes to 127.0.0.1)
+    // HTTP localhost in dev mode — TCP to loopback is always instant, so the
+    // connection phase never times out; only the response phase can.
+    tcpConnected = true;
     baseFetch = fetch;
   }
 
@@ -493,14 +534,22 @@ export async function connectToMcpServer(
     // This cast resolves the internal type inconsistency; the runtime behaviour is correct.
     transport as unknown as Transport,
   );
-  // +1 ms ensures the per-request responseTimedOut timer inside fetchChain fires before
-  // this outer backstop when both are configured to the same delay. Without the offset
-  // the outer promise (registered first) would win the race and incorrectly produce
-  // CONNECT_TIMEOUT even when the TCP connection was already established.
+  // Suppress the unobserved rejection that occurs when the timeout fires and
+  // agent.destroy() causes the pending connectPromise to reject after we've
+  // already settled via the timeoutPromise branch.
+  connectPromise.catch(() => undefined);
+
+  // The outer backstop emits CONNECT_TIMEOUT if TCP/TLS never established, or
+  // RESPONSE_TIMEOUT if TCP connected but no HTTP response arrived in time.
+  // Reading tcpConnected (set by the connector callback) at fire-time means the
+  // correct code is produced regardless of which setTimeout fires first — no
+  // +1 ms offset is needed to resolve timer-ordering races.
   const timeoutPromise = new Promise<never>((_, reject) =>
     setTimeout(
-      () => reject(new TransportError("Connection timeout")),
-      timeoutMs + 1,
+      () => reject(new TransportError(
+        tcpConnected ? "Response timeout" : "Connection timeout",
+      )),
+      timeoutMs,
     ),
   );
 
@@ -518,7 +567,11 @@ export async function connectToMcpServer(
       };
     }
   } catch (err) {
-    await agent?.destroy().catch(() => undefined);
+    // Fire-and-forget: the socket-level timeout in createPinnedConnector ensures
+    // the connector callback is called (with an error), so agent.destroy() will
+    // complete asynchronously without hanging. Awaiting it would block here until
+    // the socket timeout fires, which defeats the purpose of the outer timeout.
+    agent?.destroy().catch(() => undefined);
     const durationMs = Date.now() - startMs;
     const msg = redactErrorMessage(err);
     if (err instanceof TransportError) throw err;

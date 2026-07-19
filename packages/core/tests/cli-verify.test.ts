@@ -71,7 +71,8 @@ describe("CLI — timeout fixture", () => {
     const report = JSON.parse(stdout) as { overallStatus: string; findings: Array<{ code: string }> };
     expect(code).toBe(1);
     expect(report.overallStatus).toBe("FAIL");
-    const failCodes = ["TIMEOUT", "TRANSPORT_ERROR", "CONNECT_TIMEOUT"];
-    expect(report.findings.some((f) => failCodes.includes(f.code))).toBe(true);
+    // HTTP localhost: TCP connects instantly → tcpConnected=true → outer timer
+    // fires "Response timeout" → RESPONSE_TIMEOUT (not CONNECT_TIMEOUT).
+    expect(report.findings.some((f) => f.code === "RESPONSE_TIMEOUT")).toBe(true);
   }, 15000);
 });

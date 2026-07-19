@@ -122,9 +122,12 @@ async function runSingleScenario(
   let usedRetryCategory: RetryCategory | null = null;
 
   for (let attempt = 1; attempt <= retry.maxAttempts; attempt++) {
-    attempts = attempt;
+    // attempts is NOT advanced here — only after an actual runCheck call so that
+    // a SCENARIO_TIMEOUT at the top of iteration N reports N-1 completed requests,
+    // not N (the deadline check fires before the request starts).
 
     if (Date.now() >= deadline) {
+      usedRetryCategory = null; // deadline fired before retry; no retry category applies
       const now = new Date().toISOString();
       finalReport = {
         schemaVersion: "1",
@@ -153,6 +156,7 @@ async function runSingleScenario(
     }
 
     const report = await runCheck(serverUrl, checkOptions);
+    attempts = attempt; // advance only after the request has completed
 
     if (attempt < retry.maxAttempts) {
       // 429: retry if rate-limit category enabled

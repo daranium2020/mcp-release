@@ -10,6 +10,7 @@ export {
   startRateLimitDateServer,
   startTransientFailureServer,
   startResponseTimeoutServer,
+  startConnectTimeoutServer,
 } from "./auth-scenarios.js";
 export {
   startInvalidToolNameServer,

@@ -1,6 +1,7 @@
 /**
  * Fixture servers for v0.3.0 auth & resilience scenarios.
  */
+import net from "node:net";
 import { startRawFixture, type FixtureServer } from "./helpers.js";
 
 /** Always returns 401 with WWW-Authenticate (no Retry-After). */
@@ -194,4 +195,34 @@ export async function startResponseTimeoutServer(): Promise<FixtureServer> {
   return startRawFixture((_req, _res) => {
     // Accept but never respond — triggers response timeout
   });
+}
+
+/**
+ * Raw TCP server that accepts TCP connections but never completes the TLS handshake.
+ * Use with an https:// URL and allowPrivateNetworks: true.
+ * The TLS connect phase hangs until the outer timeoutMs fires → CONNECT_TIMEOUT.
+ *
+ * Accepted sockets are tracked so that close() can destroy them immediately:
+ * net.Server.close() only stops accepting new connections — it waits for all
+ * existing connections to close before calling its callback. Without explicit
+ * destruction the server would never finish closing (and tests would hang).
+ */
+export async function startConnectTimeoutServer(): Promise<FixtureServer> {
+  const sockets = new Set<net.Socket>();
+  const server = net.createServer((socket) => {
+    sockets.add(socket);
+    socket.once("close", () => sockets.delete(socket));
+    // Intentionally send nothing — TLS ClientHello arrives but no ServerHello is sent.
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as net.AddressInfo;
+  return {
+    url: `https://127.0.0.1:${port}`,
+    close: () =>
+      new Promise<void>((res) => {
+        // Destroy all pending sockets so server.close() callback fires promptly.
+        for (const s of sockets) s.destroy();
+        server.close(() => res());
+      }),
+  };
 }

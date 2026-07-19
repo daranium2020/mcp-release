@@ -8,6 +8,7 @@ import {
   startInvalidOutputSchemaServer,
   startInitializationFailureServer,
   startTimeoutServer,
+  startConnectTimeoutServer,
   startRedirectServer,
   type FixtureServer,
 } from "../../../fixtures/servers/src/index.js";
@@ -142,35 +143,50 @@ describe("runCheck — initialization failure", () => {
   });
 });
 
-describe("runCheck — timeout server", () => {
+describe("runCheck — response timeout server (accepts TCP, never responds)", () => {
   let server: FixtureServer;
-  beforeAll(async () => {
-    server = await startTimeoutServer();
-  });
+  beforeAll(async () => { server = await startTimeoutServer(); });
   afterAll(async () => server.close());
 
-  it("returns FAIL with RESPONSE_TIMEOUT when inner timer fires first", async () => {
-    // No responseTimeoutMs → defaults to timeoutMs.  The outer backstop gets +1 ms so
-    // the inner responseTimedOut timer always fires first → RESPONSE_TIMEOUT.
-    const report = await runCheck(server.url, {
-      ...SSRF_OPTS,
-      timeoutMs: 500,
-    });
+  it("RESPONSE_TIMEOUT when equal timeoutMs and responseTimeoutMs", async () => {
+    // HTTP localhost: tcpConnected=true immediately, so outer timer fires
+    // "Response timeout" even when equal to responseTimeoutMs — no +1ms needed.
+    const report = await runCheck(server.url, { ...SSRF_OPTS, timeoutMs: 500 });
     expect(report.overallStatus).toBe("FAIL");
     expect(report.findings.some((f) => f.code === "RESPONSE_TIMEOUT")).toBe(true);
     expect(report.findings.some((f) => f.code === "CONNECT_TIMEOUT")).toBe(false);
   }, 10000);
 
-  it("returns FAIL with CONNECT_TIMEOUT when responseTimeoutMs exceeds outer timer", async () => {
-    // outer timer = timeoutMs + 1 = 301 ms; inner = responseTimeoutMs = 5000 ms → outer wins.
+  it("RESPONSE_TIMEOUT when outer timer fires before inner (timeoutMs < responseTimeoutMs)", async () => {
+    // TCP connects instantly → tcpConnected=true; outer at 300ms fires "Response timeout".
     const report = await runCheck(server.url, {
       ...SSRF_OPTS,
       timeoutMs: 300,
       responseTimeoutMs: 5000,
     });
     expect(report.overallStatus).toBe("FAIL");
-    expect(report.findings.some((f) => f.code === "CONNECT_TIMEOUT")).toBe(true);
-    expect(report.findings.some((f) => f.code === "RESPONSE_TIMEOUT")).toBe(false);
+    expect(report.findings.some((f) => f.code === "RESPONSE_TIMEOUT")).toBe(true);
+    expect(report.findings.some((f) => f.code === "CONNECT_TIMEOUT")).toBe(false);
+  }, 10000);
+});
+
+describe("runCheck — connect timeout server (TLS handshake never completes)", () => {
+  it("CONNECT_TIMEOUT when TCP/TLS never connects within timeoutMs", async () => {
+    // Raw TCP server that never sends TLS ServerHello — TLS connect hangs.
+    // tcpConnected stays false until outer timer fires → CONNECT_TIMEOUT.
+    const server = await startConnectTimeoutServer();
+    try {
+      const report = await runCheck(server.url, {
+        allowPrivateNetworks: true, // allow 127.0.0.1 for HTTPS in tests
+        timeoutMs: 300,
+        responseTimeoutMs: 5000,
+      });
+      expect(report.overallStatus).toBe("FAIL");
+      expect(report.findings.some((f) => f.code === "CONNECT_TIMEOUT")).toBe(true);
+      expect(report.findings.some((f) => f.code === "RESPONSE_TIMEOUT")).toBe(false);
+    } finally {
+      await server.close();
+    }
   }, 10000);
 });
 
