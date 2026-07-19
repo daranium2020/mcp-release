@@ -210,7 +210,7 @@ Reference by a tagged release or by commit SHA for pinned usage:
 
 ```yaml
 - name: Validate MCP server
-  uses: daranium2020/mcp-release@v0.2.1
+  uses: daranium2020/mcp-release@v0.3.0
   with:
     endpoint: https://staging.example.com/mcp
     bearer-token-env: MCP_TOKEN   # reads token from env; never put secrets inline
@@ -225,7 +225,7 @@ Reference by a tagged release or by commit SHA for pinned usage:
 
 ```yaml
 - name: Validate local MCP server
-  uses: daranium2020/mcp-release@v0.2.1
+  uses: daranium2020/mcp-release@v0.3.0
   with:
     transport: stdio
     command: npx -y my-mcp-server
