@@ -64881,6 +64881,12 @@ var AuthChallengeTransportError = class extends TransportError {
   }
   wwwAuthenticate;
 };
+var ScenarioTimeoutTransportError = class extends TransportError {
+  constructor() {
+    super("Scenario timeout");
+    this.name = "ScenarioTimeoutTransportError";
+  }
+};
 var RateLimitTransportError = class extends TransportError {
   constructor(retryAfter, selectedIpFamily) {
     super("Rate limited (HTTP 429)", void 0, selectedIpFamily);
@@ -64982,6 +64988,7 @@ async function connectToMcpServer(serverUrl, opts = {}) {
   const maxRedirects = opts.maxRedirects ?? MAX_REDIRECTS_DEFAULT;
   const ssrfOpts = opts.ssrf ?? {};
   const requestHeaders = opts.requestHeaders ?? {};
+  const scenarioSignal = opts.scenarioSignal;
   let resolvedUrl;
   try {
     resolvedUrl = await resolveUrlForPinning(serverUrl, ssrfOpts);
@@ -65046,7 +65053,10 @@ async function connectToMcpServer(serverUrl, opts = {}) {
       timeoutController.abort();
     }, responseTimeoutMs);
     const existingSignal = init2?.signal instanceof AbortSignal ? init2.signal : void 0;
-    const mergedSignal = existingSignal ? AbortSignal.any([timeoutController.signal, existingSignal]) : timeoutController.signal;
+    const abortSignals = [timeoutController.signal];
+    if (existingSignal) abortSignals.push(existingSignal);
+    if (scenarioSignal) abortSignals.push(scenarioSignal);
+    const mergedSignal = abortSignals.length === 1 ? abortSignals[0] : AbortSignal.any(abortSignals);
     const fetchInit = {
       ...init2,
       signal: mergedSignal,
@@ -65057,6 +65067,9 @@ async function connectToMcpServer(serverUrl, opts = {}) {
       response = await baseFetch(urlStr, fetchInit);
     } catch (fetchErr) {
       clearTimeout(timer);
+      if (scenarioSignal?.aborted) {
+        throw new ScenarioTimeoutTransportError();
+      }
       if (responseTimedOut || fetchErr instanceof DOMException && fetchErr.name === "AbortError") {
         throw new TransportError("Response timeout");
       }
@@ -65153,18 +65166,35 @@ async function connectToMcpServer(serverUrl, opts = {}) {
     transport
   );
   connectPromise.catch(() => void 0);
+  const scenarioDeadlinePromise = scenarioSignal ? new Promise((_, reject) => {
+    if (scenarioSignal.aborted) {
+      reject(new ScenarioTimeoutTransportError());
+      return;
+    }
+    scenarioSignal.addEventListener("abort", () => {
+      reject(new ScenarioTimeoutTransportError());
+    }, { once: true });
+  }) : null;
   const timeoutPromise = new Promise(
     (_, reject) => setTimeout(
-      () => reject(new TransportError(
-        tcpConnected ? "Response timeout" : "Connection timeout"
-      )),
+      () => {
+        if (scenarioSignal?.aborted) {
+          reject(new ScenarioTimeoutTransportError());
+        } else {
+          reject(new TransportError(
+            tcpConnected ? "Response timeout" : "Connection timeout"
+          ));
+        }
+      },
       timeoutMs
     )
   );
+  const outerRacers = [connectPromise, timeoutPromise];
+  if (scenarioDeadlinePromise) outerRacers.push(scenarioDeadlinePromise);
   let protocolVersion = "unknown";
   let serverInfo = null;
   try {
-    await Promise.race([connectPromise, timeoutPromise]);
+    await Promise.race(outerRacers);
     const info2 = mcpClient.getServerVersion();
     if (info2) {
       protocolVersion = info2.version ?? "unknown";
@@ -65484,6 +65514,7 @@ async function runCheck(serverUrl, opts = {}) {
     if (opts.maxRedirects !== void 0) connectOpts.maxRedirects = opts.maxRedirects;
     if (opts.requestHeaders !== void 0) connectOpts.requestHeaders = opts.requestHeaders;
     if (opts.responseTimeoutMs !== void 0) connectOpts.responseTimeoutMs = opts.responseTimeoutMs;
+    if (opts.scenarioSignal !== void 0) connectOpts.scenarioSignal = opts.scenarioSignal;
     connectResult = await connectToMcpServer(serverUrl, connectOpts);
   } catch (err) {
     const durationMs2 = Date.now() - startMs;
@@ -65540,6 +65571,14 @@ async function runCheck(serverUrl, opts = {}) {
           )
         );
       }
+    } else if (err instanceof ScenarioTimeoutTransportError) {
+      findings.push(
+        makeFinding(
+          "SCENARIO_TIMEOUT",
+          "FAIL",
+          "Scenario deadline exceeded while the request was in flight."
+        )
+      );
     } else if (err instanceof RateLimitTransportError) {
       const retryAfterMs = parseRetryAfterMs(err.retryAfter);
       const context = { attempts: 1 };
