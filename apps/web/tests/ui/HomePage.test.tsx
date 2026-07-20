@@ -84,7 +84,7 @@ describe("HomePage", () => {
   it("explains that no credentials are accepted or stored (security model section)", () => {
     const { container } = render(<HomePage />);
     const text = container.textContent?.toLowerCase() ?? "";
-    expect(text).toContain("no endpoint credentials");
+    expect(text).toContain("does not accept, forward, or store endpoint credentials");
   });
 
   // ---- Result meanings ----

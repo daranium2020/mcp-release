@@ -249,8 +249,10 @@ npx -y @mcp-release/cli check --stdio --command "node dist/server.js" --cwd ./my
                   non-blocking issue. If your server requires
                   authorization, MCP Release returns{" "}
                   <code className={styles.inlineCode}>AUTH_REQUIRED</code>{" "}
-                  as a warning. Authenticated checks are not performed.
-                  No credentials are accepted or stored.
+                  as a warning. In the browser checker, authenticated
+                  checks are not performed. The browser checker does not
+                  accept or store credentials. Use the CLI or GitHub
+                  Action for authenticated scenarios.
                 </span>
               </div>
             </li>
@@ -305,8 +307,8 @@ npx -y @mcp-release/cli check --stdio --command "node dist/server.js" --cwd ./my
               in findings
             </li>
             <li>
-              No endpoint credentials are accepted, forwarded, or
-              stored
+              The web checker does not accept, forward, or store
+              endpoint credentials
             </li>
           </ul>
         </section>
