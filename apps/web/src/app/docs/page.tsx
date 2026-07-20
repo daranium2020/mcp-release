@@ -114,7 +114,7 @@ mcp-release check --stdio --command "node dist/server.js" --cwd ./packages/my-se
           {/* Supported endpoints */}
           <section aria-labelledby="endpoints-heading">
             <h2 id="endpoints-heading" className={styles.h2}>
-              Supported endpoint requirements
+              Web checker endpoint requirements
             </h2>
             <ul className={styles.ul}>
               <li>
@@ -133,8 +133,8 @@ mcp-release check --stdio --command "node dist/server.js" --cwd ./packages/my-se
                 is rejected.
               </li>
               <li>
-                No credentials are accepted, forwarded, or stored. MCP
-                Release connects as an unauthenticated client.
+                The web checker does not accept, forward, or store
+                credentials. It connects as an unauthenticated client.
               </li>
             </ul>
           </section>
@@ -185,8 +185,10 @@ mcp-release check --stdio --command "node dist/server.js" --cwd ./packages/my-se
                 sent.
               </li>
               <li>
-                Authenticated endpoints are not validated. No credentials are
-                accepted.
+                The web checker does not validate authenticated endpoints
+                or accept credentials. The CLI and GitHub Action can
+                validate authenticated scenarios, but MCP Release does not
+                audit the correctness of a server's authorization policy.
               </li>
               <li>Runtime correctness of tool responses</li>
               <li>Server authorization policies or access controls</li>
@@ -564,7 +566,8 @@ mcp-release check --config mcp-release.config.yml --markdown`}</code>
                 all redirects.
               </li>
               <li>
-                No endpoint credentials are accepted, forwarded, or stored.
+                The web checker does not accept, forward, or store
+                endpoint credentials.
               </li>
               <li>
                 Remote response bodies are never included in findings.
@@ -715,10 +718,12 @@ mcp-release check --config mcp-release.config.yml --markdown`}</code>
               Export or save them before closing the tab.
             </p>
             <p>
-              The application does not request, accept, or store credentials.
-              Validation connects as an unauthenticated client. Discovered
-              tools are listed but never executed; no tool arguments are
-              constructed or sent.
+              The web application does not request, accept, forward, or
+              store credentials and connects as an unauthenticated client.
+              CLI and GitHub Action credentials remain in the user's local
+              environment or CI secrets and are sent only to the configured
+              MCP endpoint. Discovered tools are listed but never executed;
+              no tool arguments are constructed or sent.
             </p>
             <p>
               JSON and Markdown exports are generated from the report data
