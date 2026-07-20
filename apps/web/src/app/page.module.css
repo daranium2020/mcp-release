@@ -344,6 +344,24 @@
   color: var(--text-dim);
 }
 
+/* ---- Version badge (inline in section headings) ---- */
+.versionBadge {
+  display: inline-block;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  padding: 0.175rem 0.45rem;
+  border-radius: 4px;
+  color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--blue) 28%, transparent);
+  vertical-align: middle;
+  margin-left: 0.5rem;
+  position: relative;
+  top: -0.05em;
+}
+
 /* ---- Small label above a code block ---- */
 .preLabel {
   font-size: 0.8125rem;

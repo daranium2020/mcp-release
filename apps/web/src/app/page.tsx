@@ -60,7 +60,63 @@ export default function HomePage() {
           </ul>
         </section>
 
-        {/* Local stdio validation — v0.2.0 */}
+        {/* Release scenarios — v0.3.0 */}
+        <section
+          className={styles.section}
+          aria-labelledby="scenarios-heading"
+        >
+          <h2 id="scenarios-heading" className={styles.sectionHeading}>
+            Release scenarios
+            <span className={styles.versionBadge}>New in v0.3.0</span>
+          </h2>
+          <p className={styles.demoDesc}>
+            Define multiple named scenarios in a YAML config file and validate
+            them in one run — authenticated success, expected auth failures,
+            rate limits, retries, and timeout resilience.
+          </p>
+          <ul className={styles.featureList}>
+            <li>Authenticated success via Bearer token or custom headers</li>
+            <li>Missing, invalid, expired, and forbidden credentials</li>
+            <li>Expected negative responses with defined <code className={styles.inlineCode}>expect</code> blocks</li>
+            <li>Rate limits and Retry-After header handling</li>
+            <li>Explicit retries with configurable backoff</li>
+            <li>Connect, response, and total scenario timeouts</li>
+          </ul>
+          <p className={styles.preLabel}>CLI:</p>
+          <pre className={styles.pre}>
+            <code className={styles.preCode}>{`mcp-release check --config mcp-release.config.yml`}</code>
+          </pre>
+          <p className={styles.preLabel}>Example config (mcp-release.config.yml):</p>
+          <pre className={styles.pre}>
+            <code className={styles.preCode}>{`version: 1
+endpoint: https://your-mcp-server.example.com/mcp
+
+scenarios:
+  - name: authenticated
+    headers:
+      Authorization: "Bearer \${MCP_TOKEN}"
+    expect:
+      result: pass
+
+  - name: anonymous
+    expect:
+      result: warning
+      httpStatus: 401`}</code>
+          </pre>
+          <p className={styles.preLabel}>Retry configuration:</p>
+          <pre className={styles.pre}>
+            <code className={styles.preCode}>{`retries:
+  maxAttempts: 3
+  backoffMs: 1000
+  retryOn:
+    - rate-limit
+    - server-error
+    - connection-failure
+    - response-timeout`}</code>
+          </pre>
+        </section>
+
+        {/* Local stdio validation */}
         <section
           className={styles.section}
           aria-labelledby="stdio-heading"
@@ -69,10 +125,10 @@ export default function HomePage() {
             Local stdio validation
           </h2>
           <p className={styles.demoDesc}>
-            New in v0.2.0. MCP Release can spawn and validate any MCP server
-            that communicates over stdin/stdout. Pass a command string; MCP
-            Release starts the process, performs MCP initialization, discovers
-            tools, validates schemas, and shuts down cleanly.
+            Available since v0.2.0. MCP Release can spawn and validate any MCP
+            server that communicates over stdin/stdout. Pass a command string;
+            MCP Release starts the process, performs MCP initialization,
+            discovers tools, validates schemas, and shuts down cleanly.
           </p>
           <p className={styles.stdioNote}>
             Validation runs entirely on your machine or GitHub Actions runner.
